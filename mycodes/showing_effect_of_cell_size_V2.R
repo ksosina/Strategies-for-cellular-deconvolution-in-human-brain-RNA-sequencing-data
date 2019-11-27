@@ -206,7 +206,7 @@ my_s_k <- sapply(types_cell, function(g){
   s <- mean(anal_out)
   return(s)
 })
-
+names(my_s_k) <- types_cell
 
 sc.markers <- row.names(bulk_data)
 music_basis_ests <- music_basis(sc_data, non.zero = TRUE, markers = sc.markers, 
@@ -215,6 +215,28 @@ music_basis_ests <- music_basis(sc_data, non.zero = TRUE, markers = sc.markers,
 
 music_basis_ests$M.S
 my_s_k
+
+types_cell <- unique(cell_type_data$Neurons)
+my_s_k <- sapply(types_cell, function(g){
+  c_g <- cell_type_data$cells[cell_type_data$Neurons == g]
+  print(length(c_g))
+  anal_data <- rna_gene_x_cells[genes %in% row.names(analysis_dt), c_g, with = F]
+  anal_out <- colSums(anal_data)
+  s <- mean(anal_out)
+  return(s)
+})
+names(my_s_k) <- types_cell
+
+sc.markers <- row.names(bulk_data)
+music_basis_ests <- music_basis(sc_data, non.zero = TRUE, markers = sc.markers, 
+                                clusters = cell_type_data$Neurons, samples = cell_type_data$cells, select.ct = NULL, 
+                                ct.cov = FALSE, verbose = TRUE)
+
+music_basis_ests$M.S
+my_s_k
+
+darmanis_sizes <- data.table(ct = names(my_s_k),
+                             cs = my_s_k) %>% data.frame
 
 # osmfish loom ------------------------------------------------------------
 
@@ -243,7 +265,9 @@ cell_types_aj <- fread("celltypes_ajEdits.csv")
 cell_types_aj <- cell_types_aj[!is.na(Class)]
 cell_types_aj <- cell_types_aj[Class != "Endothelial"]
 
-osmfihs_ests <- my_cell_atts[, .(mean(CellArea), .N), by = .(ClusterName, valid)]
+osmfish_test_dt <- inner_join(my_cell_atts, cell_types_aj[, .(ClusterName, Celltype = Class, Subclass)]) %>% data.table 
+
+osmfihs_ests <- my_cell_atts[, .(mean(CellArea), .N, var(CellArea)), by = .(ClusterName, valid)]
 
 osmfihs_ests <- inner_join(osmfihs_ests, cell_types_aj[, .(ClusterName, Celltype = Class, Subclass)]) %>% data.table
 
@@ -295,10 +319,34 @@ inner_join(data.table(Celltype = names(colMeans(music_basis_ests$S, na.rm = T)))
   
   my_ests <- osmfihs_ests[Celltype != "Endothelial"]
   my_ests[, Neurons := Celltype == "Neuron"]
+  
+  osmfish_test_dt[, Neurons := Celltype == "Neuron"]
   if(type_anal == "Neurons"){
-    my_ests <- my_ests[, .("w_mean" = weighted.mean(V1, N)), by = Neurons]
+    my_ests[, `:=`(tot_w = sum(N)), by = Neurons]
+    my_ests[, w_prime := N/tot_w]
+    my_ests[, w_prime_sqrd := w_prime*w_prime]
+    my_ests[, var_w_mean := sum(w_prime_sqrd*V3),  by = Neurons]
+    
+    my_ests <- my_ests[, .("w_mean" = weighted.mean(V1, N), var_w_mean = mean(var_w_mean), tot_n = mean(tot_w)), by = Neurons]
+    
+    t_stat <- diff(my_ests$w_mean)/sqrt(sum(my_ests$var_w_mean))
+    tot_df <- sum(my_ests$tot_n) - 2
+    
+    2*pt(abs(t_stat), df = tot_df, lower.tail = F)
+    
+    t.test(formula = CellArea ~ Neurons, data = osmfish_test_dt, var.equal = FALSE)
+    wilcox.test(formula = CellArea ~ Neurons, data = osmfish_test_dt)
+   
+    
+    t.test(formula = totalmolecules ~ Neurons, data = osmfish_test_dt, var.equal = FALSE)
+    wilcox.test(formula = totalmolecules ~ Neurons, data = osmfish_test_dt)
+    
   }else{
-    my_ests <- my_ests[, .("w_mean" = weighted.mean(V1, N)), by = Celltype]
+    my_ests[, `:=`(tot_w = sum(N)), by = Celltype]
+    my_ests[, w_prime := N/tot_w]
+    my_ests[, w_prime_sqrd := w_prime*w_prime]
+    my_ests[, var_w_mean := sum(w_prime_sqrd*V3),  by = Celltype]
+    my_ests <- my_ests[, .("w_mean" = weighted.mean(V1, N), var_w_mean = mean(var_w_mean)), by = Celltype]
   }
   
   my_ests[, rel_size := w_mean/sum(w_mean)]
@@ -333,25 +381,33 @@ inner_join(data.table(Celltype = names(colMeans(music_basis_ests$S, na.rm = T)))
  
   
   {
-    source(file.path(".", "mycodes", "edited_music.R"))
+    # source(file.path(".", "mycodes", "edited_music.R"))
   }
   
   if(type_anal == "Neurons"){
-    my_music_est <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$Neurons, samples = cell_type_data$cells,
-                                  my_abundance = my_out[, .(Celltype = Neurons, w_mean = total_mole )])
+    # my_music_est <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$Neurons, samples = cell_type_data$cells,
+    #                               my_abundance = my_out[, .(Celltype = Neurons, w_mean = total_mole )])
+    my_music_est <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$Neurons, samples = cell_type_data$cells,
+                               cell_size = data.frame(my_out[, .(Celltype = Neurons, w_mean = total_mole )]))
   }else{
-    my_music_est <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$all, samples = cell_type_data$cells,
-                                  my_abundance = my_out[, .(Celltype, w_mean = total_mole )])
+    # my_music_est <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$all, samples = cell_type_data$cells,
+    #                               my_abundance = my_out[, .(Celltype, w_mean = total_mole )])
+    my_music_est <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$all, samples = cell_type_data$cells,
+                               cell_size = data.frame(my_out[, .(Celltype, w_mean = total_mole )]))
   }
   my_music_est_nnls_mole <- data.table(samples  = row.names(my_music_est$Est.prop.allgene), my_music_est$Est.prop.allgene)
   my_music_est_mole <- data.table(samples  = row.names(my_music_est$Est.prop.allgene),my_music_est$Est.prop.weighted) 
   
   if(type_anal == "Neurons"){
-    my_music_est <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$Neurons, samples = cell_type_data$cells,
-                                  my_abundance = my_out[, .(Celltype = Neurons, w_mean = size )])
+    # my_music_est <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$Neurons, samples = cell_type_data$cells,
+    #                               my_abundance = my_out[, .(Celltype = Neurons, w_mean = size )])
+    my_music_est <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$Neurons, samples = cell_type_data$cells,
+                                  cell_size = data.frame(my_out[, .(Celltype = Neurons, w_mean = size )]))
   }else{
-    my_music_est <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$all, samples = cell_type_data$cells,
-                                  my_abundance = my_out[, .(Celltype, w_mean = size )])
+    # my_music_est <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$all, samples = cell_type_data$cells,
+    #                               my_abundance = my_out[, .(Celltype, w_mean = size )])
+    my_music_est <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$all, samples = cell_type_data$cells,
+                                  cell_size = data.frame(my_out[, .(Celltype, w_mean = size )]))
   }
   
   my_music_est_nnls_size <- data.table(samples  = row.names(my_music_est$Est.prop.allgene), my_music_est$Est.prop.allgene)
@@ -361,7 +417,7 @@ inner_join(data.table(Celltype = names(colMeans(music_basis_ests$S, na.rm = T)))
   
 }
 
-
+osmFISH_sizes <- my_out
 
 # ggplot(plot_dat_oshm, aes(y = log10(totalmolecules), x = ClusterName, fill = `ClusterName` )) + 
 #   geom_boxplot() +
@@ -385,23 +441,41 @@ glm(round(totalmolecules, 0) ~  scale(CellArea) + as.factor(Celltype),
 
 
 if(type_anal == "Neurons"){
-  my_music_est_nw <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$Neurons, samples = cell_type_data$cells,
-                                   my_abundance = my_out_cell_mat[, .(Celltype = Neurons, w_mean = size )])
-  my_music_est_nw_50 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$Neurons, samples = cell_type_data$cells,
-                                   my_abundance = my_out_cell_mat_50[, .(Celltype = Neurons, w_mean = size )])
-  my_music_est_nw_25 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$Neurons, samples = cell_type_data$cells,
-                                   my_abundance = my_out_cell_mat_25[, .(Celltype = Neurons, w_mean = size )])
-  my_music_est_v3 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$Neurons, samples = cell_type_data$cells,
-                                   my_abundance = my_out_cell_mat[, .(Celltype = Neurons, w_mean = 1 )])
+  # my_music_est_nw <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$Neurons, samples = cell_type_data$cells,
+  #                                  my_abundance = my_out_cell_mat[, .(Celltype = Neurons, w_mean = size )])
+  # my_music_est_nw_50 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$Neurons, samples = cell_type_data$cells,
+  #                                  my_abundance = my_out_cell_mat_50[, .(Celltype = Neurons, w_mean = size )])
+  # my_music_est_nw_25 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$Neurons, samples = cell_type_data$cells,
+  #                                  my_abundance = my_out_cell_mat_25[, .(Celltype = Neurons, w_mean = size )])
+  # my_music_est_v3 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$Neurons, samples = cell_type_data$cells,
+  #                                  my_abundance = my_out_cell_mat[, .(Celltype = Neurons, w_mean = 1 )])
+  
+  my_music_est_nw <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$Neurons, samples = cell_type_data$cells,
+                                   cell_size = data.frame(my_out_cell_mat[, .(Celltype = Neurons, w_mean = size )]))
+  my_music_est_nw_50 <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$Neurons, samples = cell_type_data$cells,
+                                      cell_size = data.frame(my_out_cell_mat_50[, .(Celltype = Neurons, w_mean = size )]))
+  my_music_est_nw_25 <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$Neurons, samples = cell_type_data$cells,
+                                      cell_size =data.frame( my_out_cell_mat_25[, .(Celltype = Neurons, w_mean = size )]))
+  my_music_est_v3 <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$Neurons, samples = cell_type_data$cells,
+                                   cell_size = data.frame(my_out_cell_mat[, .(Celltype = Neurons, w_mean = 1 )]))
 }else{
-  my_music_est_nw <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$all, samples = cell_type_data$cells,
-                                   my_abundance = my_out_cell_mat[, .(Celltype = CellType, w_mean = size )])
-  my_music_est_nw_50 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$all, samples = cell_type_data$cells,
-                                   my_abundance = my_out_cell_mat_50[, .(Celltype = CellType, w_mean = size )])
-  my_music_est_nw_25 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$all, samples = cell_type_data$cells,
-                                   my_abundance = my_out_cell_mat_25[, .(Celltype = CellType, w_mean = size )])
-  my_music_est_v3 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$all, samples = cell_type_data$cells,
-                                   my_abundance = my_out_cell_mat[, .(Celltype = CellType, w_mean = 1 )])
+  # my_music_est_nw <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$all, samples = cell_type_data$cells,
+  #                                  my_abundance = my_out_cell_mat[, .(Celltype = CellType, w_mean = size )])
+  # my_music_est_nw_50 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$all, samples = cell_type_data$cells,
+  #                                  my_abundance = my_out_cell_mat_50[, .(Celltype = CellType, w_mean = size )])
+  # my_music_est_nw_25 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$all, samples = cell_type_data$cells,
+  #                                  my_abundance = my_out_cell_mat_25[, .(Celltype = CellType, w_mean = size )])
+  # my_music_est_v3 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$all, samples = cell_type_data$cells,
+  #                                  my_abundance = my_out_cell_mat[, .(Celltype = CellType, w_mean = 1 )])
+  
+  my_music_est_nw <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$all, samples = cell_type_data$cells,
+                                cell_size = data.frame(my_out_cell_mat[, .(Celltype = CellType, w_mean = size )]))
+  my_music_est_nw_50 <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$all, samples = cell_type_data$cells,
+                                   cell_size = data.frame(my_out_cell_mat_50[, .(Celltype = CellType, w_mean = size )]))
+  my_music_est_nw_25 <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$all, samples = cell_type_data$cells,
+                                   cell_size = data.frame(my_out_cell_mat_25[, .(Celltype = CellType, w_mean = size )]))
+  my_music_est_v3 <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_type_data$all, samples = cell_type_data$cells,
+                                cell_size = data.frame(my_out_cell_mat[, .(Celltype = CellType, w_mean = 1 )]))
 }
 
 my_music_est_nw <- data.table(samples  = row.names(my_music_est_nw$Est.prop.allgene), my_music_est_nw$Est.prop.weighted) 
@@ -410,7 +484,7 @@ my_music_est_nw_25 <- data.table(samples  = row.names(my_music_est_nw_25$Est.pro
 my_music_est_v3 <- data.table(samples  = row.names(my_music_est_v3$Est.prop.allgene), my_music_est_v3$Est.prop.weighted) 
 
 
-
+NAc_sizes <- rbind(my_out_cell_mat_50[, type := "50"], my_out_cell_mat_25[, type := "25"])
 
 
 
@@ -431,40 +505,106 @@ sc_data <- ExpressionSet(assayData = sc_data)
 bulk_data <- ExpressionSet(assayData = analysis_dt)
 
 
+
+test_dt <- count_mat_id[Gene %in% row.names(analysis_dt),]
+test_dt <- data.table(Cells = names(test_dt)[-1],
+                      tot_rna = apply(test_dt[, -1], 2, sum ))
+
+test_dt <- inner_join(test_dt, cell_mat) %>% data.table
+
+
+darmanis_sizes <- data.table(darmanis_sizes)
+NAc_all_genes <- test_dt[, .(N = mean(tot_rna)), by = Neurons]
+
+all_sizes_r <- rbind(NAc_sizes,
+                   darmanis_sizes[, .(Neurons = ct, size = cs, type = "Darmanis")],
+                   osmFISH_sizes[, .(Neurons, size, type = "osmFISH cell Area")],
+                   osmFISH_sizes[, .(Neurons, size = total_mole, type = "osmFISH nRNA")],
+                   NAc_all_genes[, .(Neurons, size = N, type = "NAc all genes")])
+
+all_sizes_c <- inner_join(NAc_sizes[type == 50, .(Neurons, "NAc 50 genes" = size)],
+                          NAc_sizes[type == 25, .(Neurons, "NAc 25 genes" = size)]) %>% 
+  inner_join(NAc_all_genes[, .(Neurons, "NAc all genes" = N)]) %>% 
+  inner_join(darmanis_sizes[, .(Neurons = as.logical(ct)  , Darmanis = cs)]) %>% 
+  inner_join(osmFISH_sizes[, .(Neurons, "osmFISH cell Area" = size)]) %>% 
+  inner_join(osmFISH_sizes[, .(Neurons, "osmFISH nRNA" = total_mole)])
+ 
+fwrite(all_sizes_c, file = "all_sizes_c.txt")
+
+t.test( tot_rna ~ Neurons,data = test_dt)
+wilcox.test(tot_rna ~ Neurons,data = test_dt)
+
 if(type_anal == "Neurons"){
   music_est_v2 <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells)
-  my_music_est_nw_V2 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
-                                      my_abundance = my_out_cell_mat[, .(Celltype = Neurons, w_mean = size )])
-  my_music_est_nac_size <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
-                                    my_abundance = my_out[, .(Celltype = Neurons, w_mean = size )])
-  my_music_est_nac_nrna <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
-                                    my_abundance = my_out[, .(Celltype = Neurons, w_mean = total_mole )])
+  # my_music_est_nw_V2 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
+  #                                     my_abundance = my_out_cell_mat[, .(Celltype = Neurons, w_mean = size )])
+  # my_music_est_nac_size <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
+  #                                   my_abundance = my_out[, .(Celltype = Neurons, w_mean = size )])
+  # my_music_est_nac_nrna <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
+  #                                   my_abundance = my_out[, .(Celltype = Neurons, w_mean = total_mole )])
+  # 
+  # my_music_est_nac_none <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
+  #                                        my_abundance = my_out[, .(Celltype = Neurons, w_mean = 1 )])
   
-  my_music_est_nac_none <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
-                                         my_abundance = my_out[, .(Celltype = Neurons, w_mean = 1 )])
+  my_music_est_nw_V2 <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
+                                   cell_size = data.frame(my_out_cell_mat[, .(Celltype = Neurons, w_mean = size )]))
+  my_music_est_nac_size <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
+                                      cell_size = data.frame(my_out[, .(Celltype = Neurons, w_mean = size )]))
+  my_music_est_nac_nrna <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
+                                      cell_size = data.frame(my_out[, .(Celltype = Neurons, w_mean = total_mole )]))
   
-  my_music_est_nw_V2_50 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
-                                      my_abundance = my_out_cell_mat_50[, .(Celltype = Neurons, w_mean = size )])
-  my_music_est_nw_V2_25 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
-                                      my_abundance = my_out_cell_mat_25[, .(Celltype = Neurons, w_mean = size )])
+  my_music_est_nac_none <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
+                                      cell_size = data.frame(my_out[, .(Celltype = Neurons, w_mean = 1 )]))
   
+  # my_music_est_nw_V2_50 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
+  #                                     my_abundance = my_out_cell_mat_50[, .(Celltype = Neurons, w_mean = size )])
+  # my_music_est_nw_V2_25 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
+  #                                     my_abundance = my_out_cell_mat_25[, .(Celltype = Neurons, w_mean = size )])
+  
+  my_music_est_nw_V2_50 <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
+                                      cell_size = data.frame( my_out_cell_mat_50[, .(Celltype = Neurons, w_mean = size )]))
+  my_music_est_nw_V2_25 <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
+                                      cell_size = data.frame(my_out_cell_mat_25[, .(Celltype = Neurons, w_mean = size )]))
+  
+  
+  my_music_est_nw_darmanis <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
+                                   cell_size = darmanis_sizes)
 }else{
   music_est_v2 <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$CellType, samples = cell_mat$Cells)
-  my_music_est_nw_V2 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$CellType, samples = cell_mat$Cells,
-                                      my_abundance = my_out_cell_mat[, .(Celltype = CellType, w_mean = size )])
+  # my_music_est_nw_V2 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$CellType, samples = cell_mat$Cells,
+  #                                     my_abundance = my_out_cell_mat[, .(Celltype = CellType, w_mean = size )])
+  # 
+  # my_music_est_nac_size <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$CellType, samples = cell_mat$Cells,
+  #                                        my_abundance = my_out[, .(Celltype, w_mean = size )])
+  # my_music_est_nac_nrna <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$CellType, samples = cell_mat$Cells,
+  #                                       my_abundance = my_out[, .(Celltype, w_mean = size )])
+  # 
+  # my_music_est_nac_none <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
+  #                                        my_abundance = my_out[, .(Celltype = Neurons, w_mean = 1 )])
+  # 
+  # my_music_est_nw_V2_50 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
+  #                                        my_abundance = my_out_cell_mat_50[, .(Celltype, w_mean = size )])
+  # my_music_est_nw_V2_25 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
+  #                                        my_abundance = my_out_cell_mat_25[, .(Celltype, w_mean = size )])
   
-  my_music_est_nac_size <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$CellType, samples = cell_mat$Cells,
-                                         my_abundance = my_out[, .(Celltype, w_mean = size )])
-  my_music_est_nac_nrna <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$CellType, samples = cell_mat$Cells,
-                                        my_abundance = my_out[, .(Celltype, w_mean = size )])
+  my_music_est_nw_V2 <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$CellType, samples = cell_mat$Cells,
+                                   cell_size = data.frame(my_out_cell_mat[, .(Celltype = CellType, w_mean = size )]))
   
-  my_music_est_nac_none <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
-                                         my_abundance = my_out[, .(Celltype = Neurons, w_mean = 1 )])
+  my_music_est_nac_size <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$CellType, samples = cell_mat$Cells,
+                                      cell_size = data.frame(my_out[, .(Celltype, w_mean = size )]))
+  my_music_est_nac_nrna <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$CellType, samples = cell_mat$Cells,
+                                      cell_size = data.frame(my_out[, .(Celltype, w_mean = size )]))
   
-  my_music_est_nw_V2_50 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
-                                         my_abundance = my_out_cell_mat_50[, .(Celltype, w_mean = size )])
-  my_music_est_nw_V2_25 <- my_music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells,
-                                         my_abundance = my_out_cell_mat_25[, .(Celltype, w_mean = size )])
+  my_music_est_nac_none <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$CellType, samples = cell_mat$Cells,
+                                      cell_size = data.frame(my_out[, .(Celltype = Neurons, w_mean = 1 )]))
+  
+  my_music_est_nw_V2_50 <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$CellType, samples = cell_mat$Cells,
+                                      cell_size = data.frame(my_out_cell_mat_50[, .(Celltype, w_mean = size )]))
+  my_music_est_nw_V2_25 <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$CellType, samples = cell_mat$Cells,
+                                      cell_size = data.frame(my_out_cell_mat_25[, .(Celltype, w_mean = size )]))
+  
+  my_music_est_nw_darmanis <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$CellType, samples = cell_mat$Cells,
+                                         cell_size = darmanis_sizes)
 }
 
 
@@ -478,6 +618,8 @@ my_music_est_nac_none <- data.table(samples  = row.names(my_music_est_nac_none$E
 
 my_music_est_nw_V2_50 <- data.table(samples  = row.names(my_music_est_nw_V2_50$Est.prop.allgene), my_music_est_nw_V2_50$Est.prop.weighted) 
 my_music_est_nw_V2_25 <- data.table(samples  = row.names(my_music_est_nw_V2_25$Est.prop.allgene), my_music_est_nw_V2_25$Est.prop.weighted) 
+
+my_music_est_nw_darmanis <- data.table(samples  = row.names(my_music_est_nw_darmanis$Est.prop.allgene), my_music_est_nw_darmanis$Est.prop.weighted) 
 
 if(type_anal == "Celltype"){
   fwrite(music_est_v2, file = file.path("cell_type_data", "music_est_nac_default.txt"))
@@ -502,6 +644,8 @@ if(type_anal == "Neurons"){
   round(cor(my_music_est_nw_V2_50$`TRUE`, rse_gene$NeuN_pos_DNAm)^2, 4)
   
   
+  round(cor(my_music_est_nw_darmanis$`TRUE`, rse_gene$NeuN_pos_DNAm)^2, 4)
+  
   # RMSE
   round(sqrt(mean(music_est$`TRUE`-rse_gene$NeuN_pos_DNAm)^2), 4)
   round(sqrt(mean(my_music_est_nw$`TRUE`- rse_gene$NeuN_pos_DNAm)^2), 4)
@@ -516,8 +660,10 @@ if(type_anal == "Neurons"){
   round(sqrt(mean(my_music_est_nrna_nac$`TRUE` - rse_gene$NeuN_pos_DNAm)^2), 4)
   round(sqrt(mean(my_music_est_size_nac$`TRUE` - rse_gene$NeuN_pos_DNAm)^2), 4)
   
-  round(sqrt(mean(my_music_est_nw_V2_25$`TRUE` - rse_gene$NeuN_pos_DNAm)^2), 4)
-  round(sqrt(mean(my_music_est_nw_V2_50$`TRUE` - rse_gene$NeuN_pos_DNAm)^2), 4)
+  round(sqrt(mean((my_music_est_nw_V2_25$`TRUE` - rse_gene$NeuN_pos_DNAm)^2)), 4)
+  round(sqrt(mean((my_music_est_nw_V2_50$`TRUE` - rse_gene$NeuN_pos_DNAm)^2)), 4)
+  
+  round(sqrt(mean((my_music_est_nw_darmanis$`TRUE` - rse_gene$NeuN_pos_DNAm)^2)), 4)
   
   
 }else{
@@ -1053,14 +1199,35 @@ if(type_anal == "Neurons"){
     annotation_custom(gridExtra::tableGrob(mytable[set_idx, .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.1, xmax=.1, ymin=.4, ymax=.4) +
     transparent_legend + remove_grid +
     # ggtitle("Houseman Methylation vs MuSiC\n cell-type proportion estimates\n(Neurons only)") +
-    theme(plot.title = element_text(size = 32, face = "bold", hjust = 0.5),
-          text = element_text(size = 32),
+    theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+          text = element_text(size = 20),
           axis.title = element_text(face="bold", size = 30),
-          axis.text.y=element_text(size = 25, face="bold", hjust = 0.5),
-          axis.text.x=element_text(size = 25, face="bold", hjust = 0.5),
+          axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+          axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
           legend.position = "none",
           legend.title = element_text(face="bold"))
-  ggsave(file.path(".", "model", "manuscript", "nacgenes_v_music.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+  ggsave(file.path(".", "model", "manuscript", "dar_nacgenes_v_dna.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+  
+  set <- c("Ref:[Darmanis];Size:[None]")
+  set_idx <- which(mytable$Approach %in% set)
+  p_save <- ggplot(data = out_pd[type %in%set, ], aes(x = est, y = `Houseman DNAm-based`, color = type, shape = type)) + 
+    geom_point(size = 10) + 
+    geom_abline(slope = 1, intercept = 0) +
+    scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0, .8)) +
+    xlab("MuSiC + no cell size genes") +
+    scale_color_manual(values = p_save_cols, name = "" ) +
+    scale_shape_manual(values = p_save_shape, name = "" ) +
+    annotation_custom(gridExtra::tableGrob(mytable[set_idx, .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.1, xmax=.1, ymin=.4, ymax=.4) +
+    transparent_legend + remove_grid +
+    # ggtitle("Houseman Methylation vs MuSiC\n cell-type proportion estimates\n(Neurons only)") +
+    theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+          text = element_text(size = 20),
+          axis.title = element_text(face="bold", size = 30),
+          axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+          axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+          legend.position = "none",
+          legend.title = element_text(face="bold"))
+  ggsave(file.path(".", "model", "manuscript", "dar_no_cell_size_v_dna.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
   
   
   set <- c("Ref:[Darmanis];Size:[Default:Nac all genes]",
@@ -1173,6 +1340,62 @@ if(type_anal == "Neurons"){
           legend.title = element_text(face="bold"), 
           legend.text = element_text(size = 12, face="bold"))
   ggsave(file.path(".", "model", "manuscript", "nac_ref_v_dna.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+  
+  set <- c("Ref:[NAc];Size:[None]")
+  set_idx <- which(mytable$Approach %in% set)
+  p_save <- ggplot(data = out_pd_v4[type %in%set, ], aes(x = est, y = `Houseman DNAm-based`, color = type, shape = type)) + 
+    geom_point(size = 10) + 
+    geom_abline(slope = 1, intercept = 0) +
+    scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0, .5)) +
+    labs(x = "MuSiC no cell size", size = rel(1.5)) +
+    scale_color_manual(values = p_save_cols, name = "") +
+    scale_shape_manual(values = p_save_shape, name = "" ) +
+    annotation_custom(gridExtra::tableGrob(mytable[set_idx, .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.24, xmax=.1, ymin=.38, ymax=.38) +
+    transparent_legend + remove_grid +
+    # ggtitle("Houseman Methylation vs MuSiC\n cell-type proportion estimates\n(Neurons only)") +
+    theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+          text = element_text(size = 20),
+          axis.title = element_text(face="bold", size = 30),
+          axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+          axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+          legend.position = "none",
+          legend.title = element_text(face="bold"), 
+          legend.text = element_text(size = 12, face="bold"))
+  ggsave(file.path(".", "model", "manuscript", "nac_ref_no_cell_size_v_dna.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+  
+  
+  pt_dt <- inner_join(my_music_est_nw_darmanis[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[ Darmanis cell size]")],
+                      data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)) %>% data.table
+  
+  mytable <- pt_dt[, .(R_sqrd = cor(est, `Houseman DNAm-based`)^2,
+                           RMSE = sqrt(mean((est-`Houseman DNAm-based`)^2)))]
+  
+  mytable[, `:=`(R_sqrd = round(R_sqrd, 4),
+                 RMSE = round(RMSE, 4))]
+
+  
+  
+  p_save_cols <- RColorBrewer::brewer.pal(3, "Dark2")[1]
+  names(p_save_cols) <- unique(pt_dt$type)
+  
+  
+  p_save <- ggplot(data = pt_dt, aes(x = est, y = `Houseman DNAm-based`, color = type)) + 
+    geom_point(size = 10) + 
+    geom_abline(slope = 1, intercept = 0) +
+    scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0, .5)) +
+    labs(x = "MuSiC + Darmanis Cell size", size = rel(1.5)) +
+    scale_color_manual(values = p_save_cols, name = "") +
+    annotation_custom(gridExtra::tableGrob(mytable[, .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.08, xmax=0.08, ymin=.38, ymax=.38) +
+    transparent_legend + remove_grid +
+    theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+          text = element_text(size = 20),
+          axis.title = element_text(face="bold", size = 30),
+          axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+          axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+          legend.position = "none",
+          legend.title = element_text(face="bold"), 
+          legend.text = element_text(size = 12, face="bold"))
+  ggsave(file.path(".", "model", "manuscript", "nac_ref_darmanis_v_dna.png"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
   
   
   
