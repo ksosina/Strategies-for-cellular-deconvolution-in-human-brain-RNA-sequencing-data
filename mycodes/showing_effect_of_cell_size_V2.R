@@ -1,7 +1,8 @@
 # Preamble ----------------------------------------------------------------
 
 packs <- c("data.table", "dplyr", "SummarizedExperiment", "recount", "genefilter", "RColorBrewer", 
-           "mixtools","matrixStats", "MuSiC", "convert", "xbioc", "ggplot2", "sva", "plotly")
+           "mixtools","matrixStats", "MuSiC", "convert", "xbioc", "ggplot2", "sva", "plotly",
+           "doParallel", "parallel")
 libs_loaded <- sapply(packs, library, character.only = T)
 
 type_anal <- "Neurons" # or Celltype
@@ -155,14 +156,14 @@ gg <- count_mat_id$Gene
 gg_50 <- count_mat_id_50$Gene
 gg_25 <- count_mat_id_25$Gene
 
+analysis_dt <- which(row.names(yExprs) %in% gg)
+analysis_dt <- yExprs[analysis_dt, ]
 
 
 
 # MuSiC + Darmanis -------------------------------------------------------------------
 
 
-analysis_dt <- which(row.names(yExprs) %in% gg)
-analysis_dt <- yExprs[analysis_dt, ]
 
 
 sc_data <- rna_gene_x_cells[genes %in% row.names(analysis_dt),]
@@ -170,7 +171,8 @@ sc_data <- inner_join(data.table(genes = row.names(analysis_dt)), sc_data) %>% d
 rn <- sc_data$genes
 cn <- colnames(sc_data)
 cn <- inner_join(data.table(cells = cell_type_data$cells), data.table(cells = cn)) %>% data.table #cn <- cn[cn %in% cell_type_data$cells]
-sc_data <- sc_data[ , cn$cells, with = F]
+sc_data <- sc_data[ , cn$cells, with = F] -> darmanis_gene_cells
+darmanis_gene_cells$genes <- rn
 # sc_data <- sc_data[ , cn, with = F]
 sc_data <- data.matrix(sc_data)
 row.names(sc_data) <- rn
@@ -498,7 +500,8 @@ sc_data <- inner_join(data.table(Gene = row.names(analysis_dt)), sc_data) %>% da
 rn <- sc_data$Gene
 cn <- colnames(sc_data)
 cn <- inner_join(data.table(cells = cell_mat$Cells), data.table(cells = cn)) %>% data.table #cn[cn %in% cell_mat$Cells]
-sc_data <- sc_data[ , cn$cells, with = F]
+sc_data <- sc_data[ , cn$cells, with = F] -> nac_gene_cells
+nac_gene_cells$Gene <- rn
 sc_data <- data.matrix(sc_data)
 row.names(sc_data) <- rn
 sc_data <- ExpressionSet(assayData = sc_data)
@@ -506,33 +509,7 @@ bulk_data <- ExpressionSet(assayData = analysis_dt)
 
 
 
-test_dt <- count_mat_id[Gene %in% row.names(analysis_dt),]
-test_dt <- data.table(Cells = names(test_dt)[-1],
-                      tot_rna = apply(test_dt[, -1], 2, sum ))
 
-test_dt <- inner_join(test_dt, cell_mat) %>% data.table
-
-
-darmanis_sizes <- data.table(darmanis_sizes)
-NAc_all_genes <- test_dt[, .(N = mean(tot_rna)), by = Neurons]
-
-all_sizes_r <- rbind(NAc_sizes,
-                   darmanis_sizes[, .(Neurons = ct, size = cs, type = "Darmanis")],
-                   osmFISH_sizes[, .(Neurons, size, type = "osmFISH cell Area")],
-                   osmFISH_sizes[, .(Neurons, size = total_mole, type = "osmFISH nRNA")],
-                   NAc_all_genes[, .(Neurons, size = N, type = "NAc all genes")])
-
-all_sizes_c <- inner_join(NAc_sizes[type == 50, .(Neurons, "NAc 50 genes" = size)],
-                          NAc_sizes[type == 25, .(Neurons, "NAc 25 genes" = size)]) %>% 
-  inner_join(NAc_all_genes[, .(Neurons, "NAc all genes" = N)]) %>% 
-  inner_join(darmanis_sizes[, .(Neurons = as.logical(ct)  , Darmanis = cs)]) %>% 
-  inner_join(osmFISH_sizes[, .(Neurons, "osmFISH cell Area" = size)]) %>% 
-  inner_join(osmFISH_sizes[, .(Neurons, "osmFISH nRNA" = total_mole)])
- 
-fwrite(all_sizes_c, file = "all_sizes_c.txt")
-
-t.test( tot_rna ~ Neurons,data = test_dt)
-wilcox.test(tot_rna ~ Neurons,data = test_dt)
 
 if(type_anal == "Neurons"){
   music_est_v2 <- music_prop(bulk.eset = bulk_data, sc.eset = sc_data, clusters = cell_mat$Neurons, samples = cell_mat$Cells)
@@ -1743,3 +1720,599 @@ p_save_ciber <- ggplot(data = out_ciber[!type %in% set], aes(x = Neurons_pos, y 
 ggsave(file.path(".", "model", "bias_correction_v4_cibersort_darmanis_nq.png"), plot = p_save_ciber, dpi = "retina", width = 40, height = 30, units = "cm")
 
 
+
+
+
+# Misc --------------------------------------------------------------------
+
+test_dt <- count_mat_id[Gene %in% row.names(analysis_dt),]
+test_dt <- data.table(Cells = names(test_dt)[-1],
+                      tot_rna = apply(test_dt[, -1], 2, sum ))
+
+test_dt <- inner_join(test_dt, cell_mat) %>% data.table
+
+
+darmanis_sizes <- data.table(darmanis_sizes)
+NAc_all_genes <- test_dt[, .(N = mean(tot_rna)), by = Neurons]
+
+all_sizes_r <- rbind(NAc_sizes,
+                     darmanis_sizes[, .(Neurons = ct, size = cs, type = "Darmanis")],
+                     osmFISH_sizes[, .(Neurons, size, type = "osmFISH cell Area")],
+                     osmFISH_sizes[, .(Neurons, size = total_mole, type = "osmFISH nRNA")],
+                     NAc_all_genes[, .(Neurons, size = N, type = "NAc all genes")])
+
+all_sizes_c <- inner_join(NAc_sizes[type == 50, .(Neurons, "NAc 50 genes" = size)],
+                          NAc_sizes[type == 25, .(Neurons, "NAc 25 genes" = size)]) %>% 
+  inner_join(NAc_all_genes[, .(Neurons, "NAc all genes" = N)]) %>% 
+  inner_join(darmanis_sizes[, .(Neurons = as.logical(ct)  , Darmanis = cs)]) %>% 
+  inner_join(osmFISH_sizes[, .(Neurons, "osmFISH cell Area" = size)]) %>% 
+  inner_join(osmFISH_sizes[, .(Neurons, "osmFISH nRNA" = total_mole)])
+
+fwrite(all_sizes_c, file = "all_sizes_c.txt")
+
+t.test( tot_rna ~ Neurons,data = test_dt)
+wilcox.test(tot_rna ~ Neurons,data = test_dt)
+
+
+# Comparing Gene expression profiles
+
+dar_ttests <- lapply(1:nrow(darmanis_gene_cells), function(i){
+  x <- darmanis_gene_cells[i, -266]
+  nm <- names(x)
+  
+  test_dt <- inner_join(data.table(cells = nm, "rna" = as.numeric(t(x))),
+                        cell_type_data[, .(cells, Neurons )], by = "cells") %>% data.table
+  
+  res <- t.test( rna ~ Neurons,data = test_dt)
+  
+  data.table(gene = darmanis_gene_cells[i, genes], t_stat = res$statistic, darmanis_pval = res$p.value)
+})
+dar_ttests <- do.call(rbind, dar_ttests)
+names(dar_ttests)[2] <- "dar_t_stat"
+
+
+# nac_ttests <- lapply(1:nrow(nac_gene_cells), function(i){
+#   x <- nac_gene_cells[i, -4170]
+#   nm <- names(x)
+#   
+#   test_dt <- inner_join(data.table(Cells = nm, "rna" = as.numeric(t(x))),
+#                         cell_mat[, .(Cells, Neurons )], by = "Cells") %>% data.table
+#   
+#   res <- t.test( rna ~ Neurons, data = test_dt)
+#   
+#   data.table(gene = nac_gene_cells[i, Gene], t_stat = res$statistic, darmanis_pval = res$p.value)
+# })
+# nac_ttests <- do.call(rbind, nac_ttests)
+# names(nac_ttests)[2] <- "nac_t_stat"
+
+# For all Genes
+ncpus <- 4
+cl <- makeCluster(ncpus, outfile="")
+registerDoParallel(cl)
+clusterExport(cl, c("nac_gene_cells", "cell_mat"))
+# clusterExport(cl, ls(), envir = .GlobalEnv)
+
+nac_ttests <- parLapply(cl, 1:nrow(nac_gene_cells), function(i){
+  require(data.table)
+  require(dplyr)
+  x <- nac_gene_cells[i, -4170]
+  nm <- names(x)
+  
+  test_dt <- inner_join(data.table(Cells = nm, "rna" = as.numeric(t(x))),
+                        cell_mat[, .(Cells, Neurons )], by = "Cells") %>% data.table
+  
+  res <- t.test( rna ~ Neurons, data = test_dt)
+  
+  data.table(gene = nac_gene_cells[i, Gene], t_stat = res$statistic, nac_pval = res$p.value)
+})
+beepr::beep()
+nac_ttests <- do.call(rbind, nac_ttests)
+names(nac_ttests)[2] <- "nac_t_stat"
+stopCluster(cl)
+
+
+all_ttests <- inner_join(dar_ttests, nac_ttests) %>%  data.table
+
+# fwrite(all_ttests, file.path("all_ttests.txt"))
+# fread("all_ttests.txt") -> all_ttests
+
+transparent_legend =  theme(
+  legend.background = element_rect(fill ="transparent"),
+  legend.key = element_rect(fill = "transparent",
+                            color = "transparent")
+)
+
+remove_grid <- theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                     panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+with(all_ttests[is.finite(nac_t_stat) & is.finite(dar_t_stat)], round((cor(nac_t_stat, dar_t_stat)), 4))
+
+p_save_ttests <- ggplot(data = all_ttests, aes(x = nac_t_stat, y = dar_t_stat)) + 
+  geom_point(size = 4) + 
+  # geom_abline(slope = 1, intercept = 0, size = 3) +
+  geom_smooth(method = "auto", size = 3) +
+  xlab("NAc T-statistics") +
+  ylab("Darmanis T-statistics") +
+  scale_x_continuous(breaks = seq(-60,60, by = 10), limits = c(-55,55)) +
+  scale_y_continuous(breaks = seq(-60,60, by = 10), limits = c(-55,55)) +
+  transparent_legend + remove_grid +
+  theme(plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+        text = element_text(size = 12),
+        axis.title = element_text(face="bold", size = 14),
+        axis.text.y=element_text(size = 12, face="bold"),
+        axis.text.x=element_text(size = 12, face="bold"),
+        legend.position = c(0.85, 0.10),
+        legend.title = element_text(face="bold"))
+ggsave(file.path(".", "model", "manuscript", "nac_v_dar_ttests.pdf"), plot = p_save_ttests, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+with(all_ttests[is.finite(nac_t_stat) & is.finite(dar_t_stat)], qqplot(nac_t_stat, dar_t_stat))
+abline(a = 0, b = 1)
+
+plt_dt <- rbind(all_ttests[, .(gene, t_stat = dar_t_stat, data = "Darmanis")],
+                all_ttests[, .(gene, t_stat = nac_t_stat, data = "NAc")])
+
+p_save_ttests <- ggplot(data = plt_dt, aes(x = data, y = abs(t_stat))) + 
+  geom_violin(fill = "skyblue") +
+  geom_boxplot(width = .05) +
+  xlab("Reference dataset") +
+  ylab(expression(abs("T-statistics"))) +
+  transparent_legend + remove_grid +
+  theme(plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+        text = element_text(size = 12),
+        axis.title = element_text(face="bold", size = 14),
+        axis.text.y=element_text(size = 12, face="bold"),
+        axis.text.x=element_text(size = 12, face="bold"),
+        legend.position = c(0.85, 0.10),
+        legend.title = element_text(face="bold"))
+ggsave(file.path(".", "model", "manuscript", "nac_v_dar_ttests_bxplt.pdf"), plot = p_save_ttests, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+
+# Test the count of cells -------------------------------------------------
+
+# Use NAc ScRNA ref
+
+
+# sc_data <- count_mat_id[Gene %in% row.names(analysis_dt),]
+# sc_data <- inner_join(data.table(Gene = row.names(analysis_dt)), sc_data) %>% data.table
+# rn <- sc_data$Gene
+# cn <- colnames(sc_data)
+# bulk_data <- ExpressionSet(assayData = analysis_dt)
+# 
+# M <- 5e3
+# k <- 265
+# my_cn_sample <- matrix(0, ncol = M, nrow = k)
+
+# # Make the proportions similar to what is observed
+# p_dt <- cell_type_data[, .(.N, .N/265), by = Neurons]
+# p_dt <- inner_join(cell_mat, p_dt[, .(Neurons, p = V2, N_dar = N)]) %>% data.table
+# p_dt[, N:=.N, by =  Neurons]
+# p_dt[, p_new := 1/(N/p)]
+# p_dt[, p_new2 := N_dar/N]
+# 
+# # Check, it should be similar
+# p_dt[, sum(p_new), by = Neurons]
+# cell_type_data[, .N/265, by = Neurons]
+# 
+# cell_mat[, .N/4169,  by = Neurons]
+# 
+# my_cn_sample[, 1] <- c(sample(p_dt[, Cells], size = k, prob = p_dt[, p_new]))
+# 
+# p_dt[Cells %in% my_cn_sample[, 1], .N/265, by = Neurons ]
+# 
+# test_p_dt <- lapply(1:2e3, function(r){
+#   p_dt[Cells %in% c(sample(p_dt[, Cells], size = k, prob = p_dt[, p_new2])), .N/265, by = Neurons ]
+# })
+# 
+# test_p_dt <- do.call(rbind, test_p_dt)
+# 
+# boxplot(V1 ~ Neurons, data = test_p_dt)
+# 
+# test_p_dt[, mean(V1), by = Neurons]
+
+
+# pb <- txtProgressBar(min = 0, max = M , width = NA, style = 3)
+# pb_i <- 0
+# music_est_nac_sample_size_2 <- lapply(1:M, function(r){
+#   if(r == 1){
+#     my_cn_sample_2 <- inner_join(cell_mat[, .(Cells, Neurons)], data.table(Cells = my_cn_sample[, r]), by = "Cells") %>% data.table #cn[cn %in% cell_mat$Cells]
+#     my_sc_data <- sc_data[ , my_cn_sample_2$Cells, with = F]
+#     my_sc_data <- data.matrix(my_sc_data)
+#     row.names(my_sc_data) <- rn
+#     my_sc_data <- ExpressionSet(assayData = my_sc_data)
+#     
+#   }else{
+#     
+#     # my_cn_sample_2 <- sample(cn, k, replace = F)
+#     my_cn_sample_2 <- c(sample(p_dt[, Cells], size = k, prob = p_dt[, p_new]))
+#     c <- 1
+#     while (c == 1) {
+#       # print(c)
+#       test_col <- apply(my_cn_sample[, 1:r], 2, function(x) {sum(x %in% my_cn_sample_2)})
+#       if(any(test_col == k)){
+#         my_cn_sample_2 <- c(sample(p_dt[, Cells], size = k, prob = p_dt[, p_new]))
+#       }else{
+#         c <- 0
+#       }
+#       
+#     }
+#     
+#     my_cn_sample[, r] <- my_cn_sample_2
+#     my_cn_sample_2 <- inner_join(cell_mat[, .(Cells, Neurons)], data.table(Cells = my_cn_sample_2), by = "Cells") %>% data.table #cn[cn %in% cell_mat$Cells]
+#     my_sc_data <- sc_data[ , my_cn_sample_2$Cells, with = F]
+#     my_sc_data <- data.matrix(my_sc_data)
+#     row.names(my_sc_data) <- rn
+#     my_sc_data <- ExpressionSet(assayData = my_sc_data)
+#   }
+#   
+#  
+#   music_est_v2 <- suppressMessages(music_prop(bulk.eset = bulk_data, sc.eset = my_sc_data, clusters = my_cn_sample_2$Neurons, samples = my_cn_sample_2$Cells))
+#   music_est_v2 <- data.table(samples  = row.names(music_est_v2$Est.prop.allgene), music_est_v2$Est.prop.weighted,
+#                              Iteration = r) 
+#   
+#   pb_i <<- pb_i+1
+#   # setWinProgressBar(pb, pb_i, title = paste(round(pb_i/M)*100,"% done"))
+#   setTxtProgressBar(pb, pb_i, title = paste(round(pb_i/M)*100,"% done"))
+#   
+#   return(music_est_v2)
+#   
+# })
+# 
+# music_est_nac_sample_size_2 <- do.call(rbind, music_est_nac_sample_size_2)
+# 
+# fwrite(music_est_nac_sample_size_2, "music_est_nac_sample_size.txt")
+
+
+sc_data <- count_mat_id[Gene %in% row.names(analysis_dt),]
+sc_data <- inner_join(data.table(Gene = row.names(analysis_dt)), sc_data) %>% data.table
+rn <- sc_data$Gene
+cn <- colnames(sc_data)
+bulk_data <- ExpressionSet(assayData = analysis_dt)
+
+M <- 1e3
+k <- 265
+
+
+exp_nac <- apply(sc_data[, -1], 2, sum)
+exp_dar <- apply(darmanis_gene_cells[, -266], 2, sum)
+
+# my_cn_sample <- matrix(0, ncol = M, nrow = k)
+
+# p_dt_srt <- p_dt[order(Neurons)]
+# cell_mat2 <- inner_join(p_dt_srt[, .(Cells)], cell_mat) %>% data.table
+
+
+# s1 <- sampling::strata(p_dt_srt, stratanames = "Neurons", size = c(134, 131), pik = p_dt$p, method = "srswor") %>% data.table
+# s1[, .N/265, by = Neurons]
+
+# my_cn_sample[, 1] <- p_dt[s1$ID_unit, Cells]
+
+cell_mat[, idx := 1:.N]
+my_cn_sample <- replicate(M, c(sample(cell_mat[Neurons == F, idx], 134),
+                                 sample(cell_mat[Neurons == T, idx], 131)) )
+my_cn_sample <- apply(my_cn_sample, 2, sort)
+my_cn_sample <- unique(my_cn_sample, MARGIN = 2)
+
+my_cn_sample_cells <- matrix(0, ncol = M, nrow = k)
+
+
+pb <- txtProgressBar(min = 0, max = M , width = NA, style = 3)
+pb_i <- 0
+music_est_nac_sample_size_2 <- lapply(1:M, function(r){
+  
+  if(ncol(my_cn_sample) != M){
+    stop("Unique columns less than desired size M")
+  }
+  
+  my_cn_sample_2 <- cell_mat[my_cn_sample[, r], .(Cells, Neurons)]
+  my_cn_sample_cells[, r] <<- my_cn_sample_2$Cells
+  my_sc_data <- sc_data[ , my_cn_sample_2$Cells, with = F]
+  my_sc_data <- data.matrix(my_sc_data)
+  row.names(my_sc_data) <- rn
+  my_sc_data <- ExpressionSet(assayData = my_sc_data)
+  
+  
+  music_est_v2 <- suppressMessages(music_prop(bulk.eset = bulk_data, sc.eset = my_sc_data, clusters = my_cn_sample_2$Neurons, samples = my_cn_sample_2$Cells))
+  music_est_v2 <- data.table(samples  = row.names(music_est_v2$Est.prop.allgene), music_est_v2$Est.prop.weighted,
+                             Iteration = r) 
+  
+  pb_i <<- pb_i+1
+  setTxtProgressBar(pb, pb_i, title = paste(round(pb_i/M)*100,"% done"))
+  
+  return(music_est_v2)
+  
+})
+
+music_est_nac_sample_size_2 <- do.call(rbind, music_est_nac_sample_size_2)
+
+fwrite(music_est_nac_sample_size_2, "music_est_nac_sample_size_2.txt")
+fwrite(my_cn_sample_cells, "my_cn_sample_cells.txt")
+
+k <- 1e3
+music_est_nac_sample_size <- rbind(music_est_nac_sample_size_2[Iteration %in% 1:k],
+                                   music_est_v2[, .(samples, `FALSE`, `TRUE`, Iteration = "all" )])
+
+cell_type_data[, .N/265, by = Neurons]
+cell_mat[, .N/4169, by = Neurons]
+osmfish_test_dt[, .N/3953, by = Neurons]
+
+# Plot
+load(file.path("~", "cell_type_data", "NAc_rse_gene_withCompEsts_update.rda"))
+pt_dt <- inner_join(music_est_nac_sample_size[, .(samples, est = `TRUE`, type = Iteration)],
+                    data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)) %>% data.table
+
+mytable <- pt_dt[, .(R_sqrd = cor(est, `Houseman DNAm-based`)^2,
+                     RMSE = sqrt(mean((est-`Houseman DNAm-based`)^2))), by = type]
+
+mytable[, `:=`(R_sqrd = round(R_sqrd, 4),
+               RMSE = round(RMSE, 4))]
+
+
+
+p_save_cols <- c(rep("gray", k), "black")
+names(p_save_cols) <- unique(pt_dt$type)
+transparent_legend =  theme(
+  legend.background = element_rect(fill ="transparent"),
+  legend.key = element_rect(fill = "transparent",
+                            color = "transparent")
+)
+
+remove_grid <- theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                     panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+no_x_axis_label <- theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank())
+
+p_save <- ggplot(data = pt_dt, aes(x = est, y = `Houseman DNAm-based`, color = type)) + 
+  geom_point(size = 10) + 
+  geom_abline(slope = 1, intercept = 0) +
+  scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0, .5)) +
+  labs(x = "MuSiC:Darmanis default", size = rel(1.5)) +
+  scale_color_manual(values = p_save_cols, name = "") +
+  # annotation_custom(gridExtra::tableGrob(mytable[type == "all", .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.08, xmax=0.08, ymin=.38, ymax=.38) +
+  transparent_legend + remove_grid +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"), 
+        legend.text = element_text(size = 12, face="bold"))
+ggsave(file.path(".", "model", "manuscript", "cell_sample_size.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+p_save <- ggplot(data = mytable, aes(x = R_sqrd, y = RMSE, color = type)) + 
+  geom_point(size = 10) + 
+  geom_abline(slope = 1, intercept = 0) +
+  scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0, 1)) +
+  scale_y_continuous(breaks = seq(0,.25, by = 0.05), limits = c(0, .25)) +
+  labs(x = expression("R"^2), size = rel(1.5)) +
+  scale_color_manual(values = p_save_cols, name = "") +
+  # annotation_custom(gridExtra::tableGrob(mytable[type == "all", .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.08, xmax=0.08, ymin=.38, ymax=.38) +
+  transparent_legend + remove_grid +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"), 
+        legend.text = element_text(size = 12, face="bold"))
+ggsave(file.path(".", "model", "manuscript", "r_sqrd_v_rmse.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+
+# Proportion of expressed cells per cell type across genes (per dataset) --------
+
+pb <- txtProgressBar(min = 0, max = ncol(my_cn_sample_cells) , width = NA, style = 3)
+pb_i <- 0
+
+nac_gene_ave_dt <- apply(my_cn_sample_cells, 2, function(my_cells){
+  
+  my_cell_mat <- cell_mat[Cells %in% my_cells]
+  n_t_idx <- which(my_cell_mat$Neurons == T)
+  n_f_idx <- which(my_cell_mat$Neurons == F)
+  
+  
+  nac_gene_ave <- apply(data.matrix(nac_gene_cells[, my_cells, with = F]), 1, function(x){
+    
+    
+    out <- data.table(gene = NA, prop_exp_neu_n = mean(x[n_f_idx] > 0),
+                      prop_exp_neu_p  = mean(x[n_t_idx] > 0))
+    
+    return(out)
+    
+  })
+  
+  nac_gene_ave <- do.call(rbind, nac_gene_ave)
+  
+  nac_gene_ave <- nac_gene_ave[, .(sc_ave_prop_n = mean(prop_exp_neu_n)/sd(prop_exp_neu_n),
+                                   sc_ave_prop_p = mean(prop_exp_neu_p)/sd(prop_exp_neu_p))]
+  
+  pb_i <<- pb_i+1
+  setTxtProgressBar(pb, pb_i, title = paste(round(pb_i/nrow(nac_gene_cells))*100,"% done"))
+  
+  return(nac_gene_ave)
+})
+
+
+nac_gene_ave_dt <- do.call(rbind, nac_gene_ave_dt)
+
+fwrite(nac_gene_ave_dt, "nac_gene_ave_dt.txt")
+
+
+
+
+# Cell size per dataset ---------------------------------------------------
+
+pb <- txtProgressBar(min = 0, max = ncol(my_cn_sample_cells) , width = NA, style = 3)
+pb_i <- 0
+
+nac_cs_dt <- apply(my_cn_sample_cells, 2, function(my_cells){
+  
+  my_cell_mat <- cell_mat[Cells %in% my_cells]
+  n_t_idx <- which(my_cell_mat$Neurons == T)
+  n_f_idx <- which(my_cell_mat$Neurons == F)
+  
+  
+  nac_cs <- apply(data.matrix(nac_gene_cells[, my_cells, with = F]), 2, sum)
+  
+  out <- data.table(cell_size_f = mean(nac_cs[n_f_idx]),
+                             cell_size_t = mean(nac_cs[n_t_idx]))
+  
+  pb_i <<- pb_i+1
+  setTxtProgressBar(pb, pb_i, title = paste(round(pb_i/nrow(nac_gene_cells))*100,"% done"))
+  
+  return(out)
+})
+
+
+nac_cs_dt <- do.call(rbind, nac_cs_dt)
+
+fwrite(nac_cs_dt, "nac_cs_dt.txt")
+
+
+# Proportion of expressed cells per cell type across genes (all NAc cells) ----------------
+
+
+
+
+
+pb <- txtProgressBar(min = 0, max = nrow(darmanis_gene_cells) , width = NA, style = 3)
+pb_i <- 0
+
+n_t_idx <- which(cell_type_data$Neurons == T)
+n_f_idx <- which(cell_type_data$Neurons == F)
+darmanis_gene_ave <- apply(data.matrix(darmanis_gene_cells[, -266]), 1 ,function(x){
+  
+  out <- data.table(gene = NA, prop_exp_neu_n = mean(x[n_f_idx] > 0),
+                    prop_exp_neu_p  = mean(x[n_t_idx] > 0))
+  
+  pb_i <<- pb_i+1
+  setTxtProgressBar(pb, pb_i, title = paste(round(pb_i/nrow(darmanis_gene_cells))*100,"% done"))
+  
+  return(out)
+})
+
+darmanis_gene_ave <- do.call(rbind, darmanis_gene_ave)
+
+darmanis_gene_ave$gene <- darmanis_gene_cells$genes
+
+pb <- txtProgressBar(min = 0, max = nrow(nac_gene_cells) , width = NA, style = 3)
+pb_i <- 0
+n_t_idx <- which(cell_mat$Neurons == T)
+n_f_idx <- which(cell_mat$Neurons == F)
+nac_gene_ave <- apply(data.matrix(nac_gene_cells[, -4170]), 1, function(x){
+  
+  
+  out <- data.table(gene = NA, prop_exp_neu_n = mean(x[n_f_idx] > 0),
+                    prop_exp_neu_p  = mean(x[n_t_idx] > 0))
+  
+  pb_i <<- pb_i+1
+  setTxtProgressBar(pb, pb_i, title = paste(round(pb_i/nrow(nac_gene_cells))*100,"% done"))
+  
+  return(out)
+  
+})
+beepr::beep()
+
+nac_gene_ave <- do.call(rbind, nac_gene_ave)
+
+nac_gene_ave$gene <- nac_gene_cells$Gene
+
+
+plt_dt <- rbind(darmanis_gene_ave[, .(gene, prop = prop_exp_neu_n, type = "non-neuronal", data = "Darmanis")],
+                darmanis_gene_ave[, .(gene, prop = prop_exp_neu_p, type = "neuronal", data = "Darmanis")],
+                nac_gene_ave[, .(gene, prop = prop_exp_neu_n, type = "non-neuronal", data = "NAc")],
+                nac_gene_ave[, .(gene, prop = prop_exp_neu_p, type = "neuronal", data = "NAc")])
+
+t.test(prop ~ data, data = plt_dt[type == "non-neuronal"])
+t.test(prop ~ data, data = plt_dt[type == "neuronal"])
+
+wilcox.test(prop ~ data, data = plt_dt[type == "non-neuronal"])
+wilcox.test(prop ~ data, data = plt_dt[type == "neuronal"])
+
+
+p_save_cols <- RColorBrewer::brewer.pal(3, "Dark2")[1:2]
+names(p_save_cols) <- unique(plt_dt$type)
+
+p_save <- ggplot(data = plt_dt, aes(x = data, y = prop, fill = type)) + 
+  geom_boxplot() + 
+  labs(y = "Proportion of expressed cells" ,x = "Reference dataset", size = rel(1.5)) +
+  scale_fill_manual(values = p_save_cols, name = "Cell type") +
+  transparent_legend + remove_grid +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        # legend.position = "topright",
+        legend.title = element_text(face="bold"), 
+        legend.text = element_text(size = 12, face="bold"))
+ggsave(file.path(".", "model", "manuscript", "prop_cell_gene.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+
+# Plot --------------------------------------------------------------------
+
+
+plt_dt <- rbind(nac_gene_ave_dt[, .(sc_ave_prop_n, sc_ave_prop_p, Iteration = 1:.N)],
+                nac_gene_ave[, .(sc_ave_prop_n = mean(prop_exp_neu_n)/sd(prop_exp_neu_n),
+                                 sc_ave_prop_p = mean(prop_exp_neu_p)/sd(prop_exp_neu_p),
+                                 Iteration = "all")])
+
+plt_dt <- rbind(plt_dt[, .(est = sc_ave_prop_n, Iteration, type = "non-neuronal") ],
+                plt_dt[, .(est = sc_ave_prop_p, Iteration, type = "neuronal") ])
+
+vline.dat <- plt_dt[Iteration == "all"] 
+
+p_save_cols <- c(rep("gray", 1e3), "black")
+names(p_save_cols) <- unique(plt_dt$Iteration)
+
+p_save <- ggplot(data = plt_dt, aes(x = est, fill = type)) + 
+  geom_histogram() + 
+  labs(x = "Scaled proportion of expressed cells" ,x = "", size = rel(1.5)) +
+  facet_grid( .~type) +
+  geom_vline(aes(xintercept=est), data=vline.dat) + 
+  scale_fill_discrete(name = "Cell type") +
+  transparent_legend + remove_grid +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = c(.8, .5),
+        legend.title = element_text(face="bold"), 
+        legend.text = element_text(size = 12, face="bold"))
+ggsave(file.path(".", "model", "manuscript", "prop_cell_gene_dt.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+n_t_idx <- which(cell_mat$Neurons == T)
+n_f_idx <- which(cell_mat$Neurons == F)
+
+
+nac_cs <- apply(data.matrix(nac_gene_cells[, cell_mat$Cells, with = F]), 2, sum)
+
+nac_cs <- data.table(cell_size_f = mean(nac_cs[n_f_idx]),
+                  cell_size_t = mean(nac_cs[n_t_idx]))
+
+
+
+plt_dt <- rbind(nac_cs_dt[, .(cell_size_f, cell_size_t, Iteration = 1:.N)],
+                nac_cs[, .(cell_size_f, cell_size_t, Iteration = "all")])
+
+p_save <- ggplot(data = plt_dt, aes(x = cell_size_t, y = cell_size_f, color = Iteration)) + 
+  geom_point(size = 10) + 
+  labs(y = "non-neuronal cells" ,x = "neuronal cells", size = rel(1.5)) +
+  scale_color_manual(values = p_save_cols, name = "") +
+  transparent_legend + remove_grid +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"), 
+        legend.text = element_text(size = 12, face="bold"))
+ggsave(file.path(".", "model", "manuscript", "cell_size_dt.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
