@@ -1484,6 +1484,13 @@ if(type_anal == "Neurons"){
   
 }
 
+
+# cov(pt_dt[type == "all"][, .(est, `Houseman DNAm-based`)])
+# music_est_H <- inner_join(music_est[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[Default]")],
+#                           data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)) %>% data.table
+# 
+# cov(music_est_H[, .(est, `Houseman DNAm-based`)])
+
 # Based on > 146 genes
 # Tables ------------------------------------------------------------------
 
@@ -2128,7 +2135,9 @@ nac_gene_ave_dt <- apply(my_cn_sample_cells, 2, function(my_cells){
   nac_gene_ave <- do.call(rbind, nac_gene_ave)
   
   nac_gene_ave <- nac_gene_ave[, .(sc_ave_prop_n = mean(prop_exp_neu_n)/sd(prop_exp_neu_n),
-                                   sc_ave_prop_p = mean(prop_exp_neu_p)/sd(prop_exp_neu_p))]
+                                   sc_ave_prop_p = mean(prop_exp_neu_p)/sd(prop_exp_neu_p),
+                                   ave_prop_n = mean(prop_exp_neu_n),
+                                   ave_prop_ = mean(prop_exp_neu_p))]
   
   pb_i <<- pb_i+1
   setTxtProgressBar(pb, pb_i, title = paste(round(pb_i/nrow(nac_gene_cells))*100,"% done"))
@@ -2256,6 +2265,13 @@ ggsave(file.path(".", "model", "manuscript", "prop_cell_gene.pdf"), plot = p_sav
 
 # Plot --------------------------------------------------------------------
 
+darmanis_gene_ave[, .(sc_ave_prop_n = mean(prop_exp_neu_n)/sd(prop_exp_neu_n),
+                      sc_ave_prop_p = mean(prop_exp_neu_p)/sd(prop_exp_neu_p))]
+
+nac_gene_ave[, .(sc_ave_prop_n = mean(prop_exp_neu_n)/sd(prop_exp_neu_n),
+                 sc_ave_prop_p = mean(prop_exp_neu_p)/sd(prop_exp_neu_p))]
+
+darmanis_gene_ave[, .(mean(prop_exp_neu_n), mean(prop_exp_neu_p))]
 
 plt_dt <- rbind(nac_gene_ave_dt[, .(sc_ave_prop_n, sc_ave_prop_p, Iteration = 1:.N)],
                 nac_gene_ave[, .(sc_ave_prop_n = mean(prop_exp_neu_n)/sd(prop_exp_neu_n),
@@ -2316,3 +2332,135 @@ p_save <- ggplot(data = plt_dt, aes(x = cell_size_t, y = cell_size_f, color = It
         legend.title = element_text(face="bold"), 
         legend.text = element_text(size = 12, face="bold"))
 ggsave(file.path(".", "model", "manuscript", "cell_size_dt.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+
+nac_gene_ave_dt <- rbind(nac_gene_ave_dt[, .(ave_prop_n, ave_prop_p = ave_prop_)],
+                         nac_gene_ave[, .(ave_prop_n = mean(prop_exp_neu_n), ave_prop_p = mean(prop_exp_neu_p))])
+nac_cs_dt <- rbind(nac_cs_dt, nac_cs)
+plt_dt <- cbind(mytable, nac_gene_ave_dt, nac_cs_dt)
+
+# plt_dt <- rbind(plt_dt[, .(type, R_sqrd, RMSE, ave_prop_n, ave_prop_p, grp = "gen")],
+#                 data.table(type ="Darmanis", R_sqrd = 0.5548, RMSE = 0.3653, 
+#                            darmanis_gene_ave[, .(ave_prop_n = mean(prop_exp_neu_n), 
+#                                                  ave_prop_p = mean(prop_exp_neu_p))],
+#                            grp = "Darmanis"))
+# 
+# plt_dt$grp[plt_dt$type == "all"] <- "NAc all cells"
+# 
+# # p_save_cols <- c(rep("gray", 1e3), RColorBrewer::brewer.pal(3, "Dark2")[1:2])
+# # names(p_save_cols) <- unique(plt_dt$type)
+# # col_lbl <- c(rep(" ", 1e3), "NAc all", "Darmanis")
+# 
+# p_save_cols <- c("gray", RColorBrewer::brewer.pal(3, "Dark2")[1:2])
+# names(p_save_cols) <- unique(plt_dt$grp)
+# col_lbl <- c("Generated datasets", "NAc all cells", "Darmanis")
+# 
+
+
+
+p_save <- ggplot(data = plt_dt, aes(x = ave_prop_p, y = R_sqrd, color = type)) + 
+  geom_point(size = 10) + 
+  labs(x = "Proportion of expressed \n neuronal cells" , y = expression("R"^2), size = rel(1.5)) +
+  scale_color_manual(values = p_save_cols, name = "") +
+  transparent_legend + remove_grid +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"), 
+        legend.text = element_text(size = 12, face="bold"))
+ggsave(file.path(".", "model", "manuscript", "n_v_r_sqrd.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+
+
+
+p_save <- ggplot(data = plt_dt, aes(x = ave_prop_p, y = 1 - RMSE, color = type)) + 
+  geom_point(size = 10) + 
+  labs(x = "Proportion of expressed \n neuronal cells", y = expression("1 - RMSE"), size = rel(1.5)) +
+  scale_color_manual(values = p_save_cols, name = "") +
+  transparent_legend + remove_grid +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"), 
+        legend.text = element_text(size = 12, face="bold"))
+ggsave(file.path(".", "model", "manuscript", "n_v_rmse.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+
+p_save <- ggplot(data = plt_dt, aes(y = cell_size_t, x = R_sqrd, color = type)) + 
+  geom_point(size = 10) + 
+  labs(y = "Cell size" ,x = expression("RMSE"), size = rel(1.5)) +
+  scale_color_manual(values = p_save_cols, name = "") +
+  transparent_legend + remove_grid +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"), 
+        legend.text = element_text(size = 12, face="bold"))
+ggsave(file.path(".", "model", "manuscript", "cs_v_r_sqrd.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+summary(lm(scale(R_sqrd) ~ -1 + scale(ave_prop_p), data = plt_dt[-1001,]))
+summary(lm(scale(1-RMSE) ~ -1 + scale(ave_prop_p), data = plt_dt[-1001,]))
+summary(lm(scale(1-RMSE) ~ -1 + scale(ave_prop_p), data = plt_dt[-1001,]))$coefficients
+
+fread("nac_gene_ave_dt.txt") -> nac_gene_ave_dt
+dt <- cbind(mytable[-1001,], nac_gene_ave_dt)
+
+
+summary(lm(scale(R_sqrd) ~ -1 + scale(sc_ave_prop_p), data = dt))
+summary(lm(scale(RMSE) ~ -1 + scale(sc_ave_prop_p), data = dt))
+
+
+plt_dt <- rbind(nac_gene_ave_dt[, .(sc_ave_prop_n, sc_ave_prop_p, Iteration = 1:.N)],
+                nac_gene_ave[, .(sc_ave_prop_n = mean(prop_exp_neu_n)/sd(prop_exp_neu_n),
+                                 sc_ave_prop_p = mean(prop_exp_neu_p)/sd(prop_exp_neu_p),
+                                 Iteration = "all")])
+
+plt_dt <- cbind(mytable, plt_dt)
+
+p_save <- ggplot(data = plt_dt, aes(y = sc_ave_prop_p, x = R_sqrd, color = type)) + 
+  geom_point(size = 10) + 
+  labs(y = " Scaled proportion of expressed \n neuronal cells" ,x = expression("R"^2), size = rel(1.5)) +
+  scale_color_manual(values = p_save_cols, name = "") +
+  transparent_legend + remove_grid +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"), 
+        legend.text = element_text(size = 12, face="bold"))
+ggsave(file.path(".", "model", "manuscript", "scn_v_r_sqrd.png"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+
+
+
+p_save <- ggplot(data = plt_dt, aes(y = sc_ave_prop_p, x = RMSE, color = type)) + 
+  geom_point(size = 10) + 
+  labs(y = "Scaled proportion of expressed \n neuronal cells" ,x = expression("RMSE"), size = rel(1.5)) +
+  scale_color_manual(values = p_save_cols, name = "") +
+  transparent_legend + remove_grid +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"), 
+        legend.text = element_text(size = 12, face="bold"))
+ggsave(file.path(".", "model", "manuscript", "scn_v_rmse.png"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
