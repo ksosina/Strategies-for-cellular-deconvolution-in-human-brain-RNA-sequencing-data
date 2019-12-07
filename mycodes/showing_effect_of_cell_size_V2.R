@@ -1826,6 +1826,7 @@ p_save <- ggplot(data = all_pd[size == "Darmanis" & ref == "NAc", ], aes(x = est
   scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0, .5)) +
   labs(x = "MuSiC + Darmanis Cell size", size = rel(1.5)) +
   scale_color_manual(values = p_save_cols, name = "") +
+  scale_shape_manual(values = p_save_shape, name = "" ) +
   annotation_custom(gridExtra::tableGrob(mytable[size == "Darmanis" & ref == "NAc", .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.08, xmax=0.08, ymin=.38, ymax=.38) +
   transparent_legend + remove_grid +
   theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
