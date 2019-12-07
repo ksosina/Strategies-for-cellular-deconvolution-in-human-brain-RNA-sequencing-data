@@ -933,8 +933,6 @@ if(type_anal == "Neurons"){
   })
   
   # Main figs
-  
-  par(mar=c(5,6,6,2), cex.axis=2,cex.lab=2))
 
 
   if(!dir.exists(file.path(".", "model", "manuscript"))){
@@ -1008,8 +1006,6 @@ if(type_anal == "Neurons"){
   ciber_darmanis <- fread(file.path("cell_type_data", "CIBERSORT.Output_darmanis_no_quantile_V2.txt"))
   
   ciber_darmanis[, type:="Ref:[Darmanis]"]
-  
-  
   out_ciber <- inner_join(ciber_darmanis[, .(samples = `Input Sample`, Neurons_pos, type)], DNam_darmanis) %>% data.table
   
   mytable_ciber <- out_ciber[, .(R_sqrd = cor(Neurons_pos, `Houseman DNAm-based`)^2,
@@ -1485,13 +1481,408 @@ if(type_anal == "Neurons"){
 }
 
 
-# cov(pt_dt[type == "all"][, .(est, `Houseman DNAm-based`)])
-# music_est_H <- inner_join(music_est[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[Default]")],
-#                           data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)) %>% data.table
-# 
-# cov(music_est_H[, .(est, `Houseman DNAm-based`)])
+# NNLS --------------------------------------------------------------------
 
-# Based on > 146 genes
+# Darmanis
+
+pb <- txtProgressBar(min = 0, max = nrow(darmanis_gene_cells) , width = NA, style = 3)
+pb_i <- 0
+
+n_t_idx <- which(cell_type_data$Neurons == T)
+n_f_idx <- which(cell_type_data$Neurons == F)
+darmanis_gene_ave <- apply(data.matrix(darmanis_gene_cells[, -266]), 1 ,function(x){
+  
+  out <- data.table(gene = NA, exp_neu_n = mean(x[n_f_idx]),
+                    exp_neu_p  = mean(x[n_t_idx]))
+  
+  pb_i <<- pb_i+1
+  setTxtProgressBar(pb, pb_i, title = paste(round(pb_i/nrow(darmanis_gene_cells))*100,"% done"))
+  
+  return(out)
+})
+
+darmanis_gene_ave <- do.call(rbind, darmanis_gene_ave)
+
+darmanis_gene_ave$gene <- darmanis_gene_cells$genes
+
+# NAc
+# Use NAc ScRNA ref
+pb <- txtProgressBar(min = 0, max = nrow(nac_gene_cells) , width = NA, style = 3)
+pb_i <- 0
+n_t_idx <- which(cell_mat$Neurons == T)
+n_f_idx <- which(cell_mat$Neurons == F)
+nac_gene_ave <- apply(data.matrix(nac_gene_cells[, -4170]), 1, function(x){
+  
+  
+  out <- data.table(gene = NA, exp_neu_n = mean(x[n_f_idx]),
+                    exp_neu_p  = mean(x[n_t_idx]))
+  
+  pb_i <<- pb_i+1
+  setTxtProgressBar(pb, pb_i, title = paste(round(pb_i/nrow(nac_gene_cells))*100,"% done"))
+  
+  return(out)
+  
+})
+beepr::beep()
+nac_gene_ave <- do.call(rbind, nac_gene_ave)
+nac_gene_ave$gene <- nac_gene_cells$Gene
+
+
+identical(row.names(analysis_dt), darmanis_gene_ave$gene)
+identical(row.names(analysis_dt), nac_gene_ave$gene)
+
+dar_m <- data.matrix(darmanis_gene_ave[, 2:3])
+dar_nnls <- apply(analysis_dt, 2, function(b){
+  ft <- nnls(dar_m, b)
+  ft$x/sum(ft$x)
+})
+
+dar_nnls <- data.table(t(dar_nnls))
+names(dar_nnls) <- c("neu_n", "neu_p")
+dar_nnls$samples <- colnames(analysis_dt)
+
+
+nac_m <- data.matrix(nac_gene_ave[, 2:3])
+nac_nnls <- apply(analysis_dt, 2, function(b){
+  ft <- nnls(nac_m, b)
+  ft$x/sum(ft$x)
+})
+
+nac_nnls <- data.table(t(nac_nnls))
+names(nac_nnls) <- c("neu_n", "neu_p")
+nac_nnls$samples <- colnames(analysis_dt)
+
+
+pt_dt <- rbind(inner_join(dar_nnls[, .(samples, est = neu_p, ref = "Darmanis")],
+                          data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+               inner_join(nac_nnls[, .(samples, est = neu_p, ref = "NAc")],
+                          data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm))) %>% data.table
+
+mytable <- pt_dt[, .(R_sqrd = cor(est, `Houseman DNAm-based`)^2,
+                     RMSE = sqrt(mean((est-`Houseman DNAm-based`)^2))), by = ref]
+
+mytable[, `:=`(R_sqrd = round(R_sqrd, 4),
+               RMSE = round(RMSE, 4))]
+
+
+
+p_save_cols <- RColorBrewer::brewer.pal(3, "Dark2")[1:2]
+names(p_save_cols) <- unique(pt_dt$ref)
+
+p_save <- ggplot(data = pt_dt[ref == "Darmanis",], aes(x = est, y = `Houseman DNAm-based`, color = ref)) + 
+  geom_point(size = 10) + 
+  geom_abline(slope = 1, intercept = 0) +
+  scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0, .8)) +
+  labs(x = "MuSiC + Darmanis Cell size", size = rel(1.5)) +
+  scale_color_manual(values = p_save_cols, name = "") +
+  annotation_custom(gridExtra::tableGrob(mytable[ref == "Darmanis", .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.08, xmax=0.08, ymin=.38, ymax=.38) +
+  transparent_legend + remove_grid +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"), 
+        legend.text = element_text(size = 12, face="bold"))
+ggsave(file.path(".", "model", "manuscript", "darmanis_ref_nnls_v_dna.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+p_save <- ggplot(data = pt_dt[ref == "NAc",], aes(x = est, y = `Houseman DNAm-based`, color = ref)) + 
+  geom_point(size = 10) + 
+  geom_abline(slope = 1, intercept = 0) +
+  scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0, .5)) +
+  labs(x = "MuSiC + Darmanis Cell size", size = rel(1.5)) +
+  scale_color_manual(values = p_save_cols, name = "") +
+  annotation_custom(gridExtra::tableGrob(mytable[ref == "NAc", .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.08, xmax=0.08, ymin=.38, ymax=.38) +
+  transparent_legend + remove_grid +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"), 
+        legend.text = element_text(size = 12, face="bold"))
+ggsave(file.path(".", "model", "manuscript", "nac_ref_nnls_v_dna.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+# Matrix panel plot data --------------------------------------------------
+
+dar_pd <- rbind(inner_join(music_est[, .(samples, est = `TRUE`, size = "Darmanis")],
+                           data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                inner_join(my_music_est_mole[, .(samples, est = `TRUE`, size = "osmFISH totalRNA")],
+                           data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                inner_join(my_music_est_size[, .(samples, est = `TRUE`, size = "osmFISH cellsize")],
+                           data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                inner_join(my_music_est_nw[, .(samples, est = `TRUE`, size = "NAc")],
+                           data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                inner_join(my_music_est_v3[, .(samples, est = `TRUE`, size = "None")],
+                           data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm))) %>% data.table
+dar_pd$ref <- "Darmanis"
+
+
+
+nac_pd <- rbind(inner_join(music_est_v2[, .(samples, est = `TRUE`, size = "NAc")],
+                           data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                inner_join(my_music_est_nrna_nac[, .(samples, est = `TRUE`, size = "osmFISH totalRNA")],
+                           data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                inner_join(my_music_est_size_nac[, .(samples, est = `TRUE`, size = "osmFISH cellsize")],
+                           data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                inner_join(my_music_est_nac_none[, .(samples, est = `TRUE`, size = "None")],
+                           data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                inner_join(my_music_est_nw_darmanis[, .(samples, est = `TRUE`, size = "Darmanis")],
+                           data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)) %>% data.table) %>% data.table
+
+nac_pd$ref <- "NAc"
+
+all_pd <- rbind(dar_pd, nac_pd)
+
+mytable <- all_pd[, .(R_sqrd = cor(est, `Houseman DNAm-based`)^2,
+                      RMSE = sqrt(mean((est-`Houseman DNAm-based`)^2))), by = .(ref, size)]
+
+mytable[, `:=`(R_sqrd = round(R_sqrd, 4),
+               RMSE = round(RMSE, 4))]
+
+
+p_save_cols <- RColorBrewer::brewer.pal(3, "Dark2")[1:2]
+names(p_save_cols) <- unique(all_pd$ref)
+p_save_shape <- c(15:19)
+names(p_save_shape) <- unique(all_pd$size)
+
+transparent_legend =  theme(
+  legend.background = element_rect(fill ="transparent"),
+  legend.key = element_rect(fill = "transparent",
+                            color = "transparent")
+)
+
+remove_grid <- theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                     panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+mytheme <- gridExtra::ttheme_default(
+  core = list(fg_params=list(cex = 2.0)),
+  colhead = list(fg_params=list(cex = 2.0)),
+  rowhead = list(fg_params=list(cex =2.0)))
+
+# Matrix panel plots ------------------------------------------------------
+
+# Darmanis
+
+p_save <- ggplot(data = all_pd[size == "None" & ref == "Darmanis", ], aes(x = est, y = `Houseman DNAm-based`, color = ref, shape = size)) + 
+  geom_point(size = 10) + 
+  geom_abline(slope = 1, intercept = 0) +
+  scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0, .8)) +
+  xlab("MuSiC + no cell size genes") +
+  scale_color_manual(values = p_save_cols, name = "" ) +
+  scale_shape_manual(values = p_save_shape, name = "" ) +
+  annotation_custom(gridExtra::tableGrob(mytable[size == "None" & ref == "Darmanis", .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.1, xmax=.1, ymin=.4, ymax=.4) +
+  transparent_legend + remove_grid +
+  # ggtitle("Houseman Methylation vs MuSiC\n cell-type proportion estimates\n(Neurons only)") +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"))
+ggsave(file.path(".", "model", "manuscript", "dar_no_cell_size_v_dna_V2.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+# •	B: Music RNA Default with Darmanis
+p_save <- ggplot(data = all_pd[size == "Darmanis" & ref == "Darmanis", ], aes(x = est, y = `Houseman DNAm-based`, color = ref, shape = size)) + 
+  geom_point(size = 10) + 
+  geom_abline(slope = 1, intercept = 0) +
+  scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0,.8)) +
+  labs(x = "MuSiC estimates", size = rel(1.5)) +
+  scale_color_manual(values = p_save_cols, name = "" ) +
+  scale_shape_manual(values = p_save_shape, name = "" ) +
+  annotation_custom(gridExtra::tableGrob(mytable[size == "Darmanis" & ref == "Darmanis", .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.65, xmax=.65, ymin=.05, ymax=.05) +
+  transparent_legend + remove_grid +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"),
+        plot.margin = margin(5,10,10,2))
+ggsave(file.path(".", "model", "manuscript", "dar_dna_v_music_V2.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+
+p_save <- ggplot(data = all_pd[size == "NAc" & ref == "Darmanis", ], aes(x = est, y = `Houseman DNAm-based`, color = ref, shape = size)) + 
+  geom_point(size = 10) + 
+  geom_abline(slope = 1, intercept = 0) +
+  scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0, .5)) +
+  xlab("MuSiC + all genes") +
+  scale_color_manual(values = p_save_cols, name = "" ) +
+  scale_shape_manual(values = p_save_shape, name = "" ) +
+  annotation_custom(gridExtra::tableGrob(mytable[size == "NAc" & ref == "Darmanis", .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.1, xmax=.1, ymin=.4, ymax=.4) +
+  transparent_legend + remove_grid +
+  # ggtitle("Houseman Methylation vs MuSiC\n cell-type proportion estimates\n(Neurons only)") +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"))
+ggsave(file.path(".", "model", "manuscript", "dar_nacgenes_v_dna_V2.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+
+
+p_save <- ggplot(data = all_pd[size == "osmFISH cellsize" & ref == "Darmanis", ], aes(x = est, y = `Houseman DNAm-based`, color = ref, shape = size)) + 
+  geom_point(size = 10) + 
+  geom_abline(slope = 1, intercept = 0) +
+  scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0, .8)) +
+  labs(x = "MuSiC + osmFISH cell area", size = rel(1.5)) +
+  scale_color_manual(values = p_save_cols, name = "" ) +
+  scale_shape_manual(values = p_save_shape, name = "" ) +
+  annotation_custom(gridExtra::tableGrob(mytable[size == "osmFISH cellsize" & ref == "Darmanis", .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.15, xmax=.15, ymin=.38, ymax=.38) +
+  transparent_legend + remove_grid +
+  # ggtitle("Houseman Methylation vs MuSiC \ncell-type proportion estimates\n using osmFISH cellsize\n (Neurons only)") +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"))
+ggsave(file.path(".", "model", "manuscript", "dar_osmFISH_cellsize_v_dna_V2.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+
+
+p_save <- ggplot(data = all_pd[size == "osmFISH totalRNA" & ref == "Darmanis", ], aes(x = est, y = `Houseman DNAm-based`, color = ref, shape = size)) + 
+  geom_point(size = 10) + 
+  geom_abline(slope = 1, intercept = 0) +
+  scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0, .8)) +
+  labs(x = "MuSiC + osmFISH totalRNA", size = rel(1.5)) +
+  scale_color_manual(values = p_save_cols, name = "" ) +
+  scale_shape_manual(values = p_save_shape, name = "" ) +
+  annotation_custom(gridExtra::tableGrob(mytable[size == "osmFISH totalRNA" & ref == "Darmanis", .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.15, xmax=.15, ymin=.38, ymax=.38) +
+  transparent_legend + remove_grid +
+  # ggtitle("Houseman Methylation\ vs MuSiC\n cell-type proportion estimates\n using total RNA count as cellsize\n (Neurons only)") +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"))
+ggsave(file.path(".", "model", "manuscript", "dar_osmFISH_mole_v_dna_V2.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+# NAc
+
+p_save <- ggplot(data = all_pd[size == "osmFISH cellsize" & ref == "NAc", ], aes(x = est, y = `Houseman DNAm-based`, color = ref, shape = size)) + 
+  geom_point(size = 10) + 
+  geom_abline(slope = 1, intercept = 0) +
+  scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0, .5)) +
+  labs(x = "MuSiC + osmFISH cell area", size = rel(1.5)) +
+  scale_color_manual(values = p_save_cols, name = "") +
+  scale_shape_manual(values = p_save_shape, name = "" ) +
+  annotation_custom(gridExtra::tableGrob(mytable[size == "osmFISH cellsize" & ref == "NAc", .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.1, xmax=.1, ymin=.38, ymax=.38) +
+  transparent_legend + remove_grid +
+  # ggtitle("Houseman Methylation vs MuSiC\n cell-type proportion estimates\n(Neurons only)") +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"), 
+        legend.text = element_text(size = 12, face="bold"))
+ggsave(file.path(".", "model", "manuscript", "nac_osmFISH_cellsize_v_dna_V2.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+
+p_save <- ggplot(data = all_pd[size == "osmFISH totalRNA" & ref == "NAc", ], aes(x = est, y = `Houseman DNAm-based`, color = ref, shape = size)) + 
+  geom_point(size = 10) + 
+  geom_abline(slope = 1, intercept = 0) +
+  scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0, .5)) +
+  labs(x = "MuSiC + osmFISH totalRNA", size = rel(1.5)) +
+  scale_color_manual(values = p_save_cols, name = "") +
+  scale_shape_manual(values = p_save_shape, name = "" ) +
+  annotation_custom(gridExtra::tableGrob(mytable[size == "osmFISH totalRNA" & ref == "NAc", .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.1, xmax=.1, ymin=.38, ymax=.38) +
+  transparent_legend + remove_grid +
+  # ggtitle("Houseman Methylation vs MuSiC\n cell-type proportion estimates\n(Neurons only)") +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"), 
+        legend.text = element_text(size = 12, face="bold"))
+ggsave(file.path(".", "model", "manuscript", "nac_osmFISH_mole_v_dna_V2.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+
+p_save <- ggplot(data = all_pd[size == "Darmanis" & ref == "NAc", ], aes(x = est, y = `Houseman DNAm-based`, color = ref, shape = size)) + 
+  geom_point(size = 10) + 
+  geom_abline(slope = 1, intercept = 0) +
+  scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0, .5)) +
+  labs(x = "MuSiC + Darmanis Cell size", size = rel(1.5)) +
+  scale_color_manual(values = p_save_cols, name = "") +
+  annotation_custom(gridExtra::tableGrob(mytable[size == "Darmanis" & ref == "NAc", .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.08, xmax=0.08, ymin=.38, ymax=.38) +
+  transparent_legend + remove_grid +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"), 
+        legend.text = element_text(size = 12, face="bold"))
+ggsave(file.path(".", "model", "manuscript", "nac_ref_darmanis_v_dna_V2.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+
+p_save <- ggplot(data = all_pd[size == "NAc" & ref == "NAc", ], aes(x = est, y = `Houseman DNAm-based`, color = ref, shape = size)) + 
+  geom_point(size = 10) + 
+  geom_abline(slope = 1, intercept = 0) +
+  scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0, .5)) +
+  labs(x = "MuSiC default", size = rel(1.5)) +
+  scale_color_manual(values = p_save_cols, name = "") +
+  scale_shape_manual(values = p_save_shape, name = "" ) +
+  annotation_custom(gridExtra::tableGrob(mytable[size == "NAc" & ref == "NAc", .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.24, xmax=.1, ymin=.38, ymax=.38) +
+  transparent_legend + remove_grid +
+  # ggtitle("Houseman Methylation vs MuSiC\n cell-type proportion estimates\n(Neurons only)") +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"), 
+        legend.text = element_text(size = 12, face="bold"))
+ggsave(file.path(".", "model", "manuscript", "nac_ref_v_dna_V2.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+p_save <- ggplot(data = all_pd[size == "None" & ref == "NAc", ], aes(x = est, y = `Houseman DNAm-based`, color = ref, shape = size)) + 
+  geom_point(size = 10) + 
+  geom_abline(slope = 1, intercept = 0) +
+  scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0, .5)) +
+  labs(x = "MuSiC no cell size", size = rel(1.5)) +
+  scale_color_manual(values = p_save_cols, name = "") +
+  scale_shape_manual(values = p_save_shape, name = "" ) +
+  annotation_custom(gridExtra::tableGrob(mytable[size == "None" & ref == "NAc", .(R_sqrd, RMSE)], rows = NULL, theme = mytheme), xmin=0.24, xmax=.1, ymin=.38, ymax=.38) +
+  transparent_legend + remove_grid +
+  # ggtitle("Houseman Methylation vs MuSiC\n cell-type proportion estimates\n(Neurons only)") +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        text = element_text(size = 20),
+        axis.title = element_text(face="bold", size = 30),
+        axis.text.y=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        axis.text.x=element_text(size = rel(1.3), face="bold", hjust = 0.5),
+        legend.position = "none",
+        legend.title = element_text(face="bold"), 
+        legend.text = element_text(size = 12, face="bold"))
+ggsave(file.path(".", "model", "manuscript", "nac_ref_no_cell_size_v_dna_V2.pdf"), plot = p_save, dpi = "retina", width = 20, height = 20, units = "cm")
+
+
+
 # Tables ------------------------------------------------------------------
 
 mytable_nac <- out_pd_v4[, .(R_sqrd = cor(est, `Houseman DNAm-based`)^2,
@@ -1879,97 +2270,6 @@ ggsave(file.path(".", "model", "manuscript", "nac_v_dar_ttests_bxplt.pdf"), plot
 # Test the count of cells -------------------------------------------------
 
 # Use NAc ScRNA ref
-
-
-# sc_data <- count_mat_id[Gene %in% row.names(analysis_dt),]
-# sc_data <- inner_join(data.table(Gene = row.names(analysis_dt)), sc_data) %>% data.table
-# rn <- sc_data$Gene
-# cn <- colnames(sc_data)
-# bulk_data <- ExpressionSet(assayData = analysis_dt)
-# 
-# M <- 5e3
-# k <- 265
-# my_cn_sample <- matrix(0, ncol = M, nrow = k)
-
-# # Make the proportions similar to what is observed
-# p_dt <- cell_type_data[, .(.N, .N/265), by = Neurons]
-# p_dt <- inner_join(cell_mat, p_dt[, .(Neurons, p = V2, N_dar = N)]) %>% data.table
-# p_dt[, N:=.N, by =  Neurons]
-# p_dt[, p_new := 1/(N/p)]
-# p_dt[, p_new2 := N_dar/N]
-# 
-# # Check, it should be similar
-# p_dt[, sum(p_new), by = Neurons]
-# cell_type_data[, .N/265, by = Neurons]
-# 
-# cell_mat[, .N/4169,  by = Neurons]
-# 
-# my_cn_sample[, 1] <- c(sample(p_dt[, Cells], size = k, prob = p_dt[, p_new]))
-# 
-# p_dt[Cells %in% my_cn_sample[, 1], .N/265, by = Neurons ]
-# 
-# test_p_dt <- lapply(1:2e3, function(r){
-#   p_dt[Cells %in% c(sample(p_dt[, Cells], size = k, prob = p_dt[, p_new2])), .N/265, by = Neurons ]
-# })
-# 
-# test_p_dt <- do.call(rbind, test_p_dt)
-# 
-# boxplot(V1 ~ Neurons, data = test_p_dt)
-# 
-# test_p_dt[, mean(V1), by = Neurons]
-
-
-# pb <- txtProgressBar(min = 0, max = M , width = NA, style = 3)
-# pb_i <- 0
-# music_est_nac_sample_size_2 <- lapply(1:M, function(r){
-#   if(r == 1){
-#     my_cn_sample_2 <- inner_join(cell_mat[, .(Cells, Neurons)], data.table(Cells = my_cn_sample[, r]), by = "Cells") %>% data.table #cn[cn %in% cell_mat$Cells]
-#     my_sc_data <- sc_data[ , my_cn_sample_2$Cells, with = F]
-#     my_sc_data <- data.matrix(my_sc_data)
-#     row.names(my_sc_data) <- rn
-#     my_sc_data <- ExpressionSet(assayData = my_sc_data)
-#     
-#   }else{
-#     
-#     # my_cn_sample_2 <- sample(cn, k, replace = F)
-#     my_cn_sample_2 <- c(sample(p_dt[, Cells], size = k, prob = p_dt[, p_new]))
-#     c <- 1
-#     while (c == 1) {
-#       # print(c)
-#       test_col <- apply(my_cn_sample[, 1:r], 2, function(x) {sum(x %in% my_cn_sample_2)})
-#       if(any(test_col == k)){
-#         my_cn_sample_2 <- c(sample(p_dt[, Cells], size = k, prob = p_dt[, p_new]))
-#       }else{
-#         c <- 0
-#       }
-#       
-#     }
-#     
-#     my_cn_sample[, r] <- my_cn_sample_2
-#     my_cn_sample_2 <- inner_join(cell_mat[, .(Cells, Neurons)], data.table(Cells = my_cn_sample_2), by = "Cells") %>% data.table #cn[cn %in% cell_mat$Cells]
-#     my_sc_data <- sc_data[ , my_cn_sample_2$Cells, with = F]
-#     my_sc_data <- data.matrix(my_sc_data)
-#     row.names(my_sc_data) <- rn
-#     my_sc_data <- ExpressionSet(assayData = my_sc_data)
-#   }
-#   
-#  
-#   music_est_v2 <- suppressMessages(music_prop(bulk.eset = bulk_data, sc.eset = my_sc_data, clusters = my_cn_sample_2$Neurons, samples = my_cn_sample_2$Cells))
-#   music_est_v2 <- data.table(samples  = row.names(music_est_v2$Est.prop.allgene), music_est_v2$Est.prop.weighted,
-#                              Iteration = r) 
-#   
-#   pb_i <<- pb_i+1
-#   # setWinProgressBar(pb, pb_i, title = paste(round(pb_i/M)*100,"% done"))
-#   setTxtProgressBar(pb, pb_i, title = paste(round(pb_i/M)*100,"% done"))
-#   
-#   return(music_est_v2)
-#   
-# })
-# 
-# music_est_nac_sample_size_2 <- do.call(rbind, music_est_nac_sample_size_2)
-# 
-# fwrite(music_est_nac_sample_size_2, "music_est_nac_sample_size.txt")
-
 
 sc_data <- count_mat_id[Gene %in% row.names(analysis_dt),]
 sc_data <- inner_join(data.table(Gene = row.names(analysis_dt)), sc_data) %>% data.table
