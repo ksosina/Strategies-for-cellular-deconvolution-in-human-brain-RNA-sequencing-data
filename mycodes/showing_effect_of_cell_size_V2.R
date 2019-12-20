@@ -665,6 +665,132 @@ if(type_anal == "Neurons"){
 }
 
 
+# Save results
+{
+  
+  out_pd_v3 <- rbind(inner_join(music_est[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[Default]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_mole[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[osmFISH totalRNA]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_size[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[osmFISH cellsize]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_nw[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[Default:Nac all genes]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_nw_50[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[Default:Nac top 50 genes]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_nw_25[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[Default:Nac top 25 genes]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_v3[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[None]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm))) %>% data.table
+  
+  
+  
+ 
+  
+  out_pd_v4 <- rbind(inner_join(music_est_v2[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[Default]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_nrna_nac[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[osmFISH totalRNA]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_size_nac[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[osmFISH cellsize]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_nw_darmanis[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[Darmanis cell size]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_nw_V2_50[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[Default:Nac top 50 genes]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_nw_V2_25[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[Default:Nac top 25 genes]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_nac_none[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[None]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm))) %>% data.table
+  
+  out_dt_wide <- reshape(rbind(out_pd_v3, out_pd_v4), v.names = "est", idvar = "samples",
+                  timevar = "type", direction = "wide") %>% data.table
+  fwrite(out_dt_wide, file.path(".", "cell_type_data", "est_by_approach.txt"))
+  
+  out_pd_v3_pc1 <- rbind(inner_join(music_est[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[Default]")],
+                                data.table(samples = rse_gene$SampleID, "DNAm-based pc1" = rse_gene$PC1_DNAm)),
+                     inner_join(my_music_est_mole[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[osmFISH totalRNA]")],
+                                data.table(samples = rse_gene$SampleID, "DNAm-based pc1" = rse_gene$PC1_DNAm)),
+                     inner_join(my_music_est_size[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[osmFISH cellsize]")],
+                                data.table(samples = rse_gene$SampleID, "DNAm-based pc1" = rse_gene$PC1_DNAm)),
+                     inner_join(my_music_est_nw[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[Default:Nac all genes]")],
+                                data.table(samples = rse_gene$SampleID, "DNAm-based pc1" = rse_gene$PC1_DNAm)),
+                     inner_join(my_music_est_nw_50[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[Default:Nac top 50 genes]")],
+                                data.table(samples = rse_gene$SampleID, "DNAm-based pc1" = rse_gene$PC1_DNAm)),
+                     inner_join(my_music_est_nw_25[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[Default:Nac top 25 genes]")],
+                                data.table(samples = rse_gene$SampleID, "DNAm-based pc1" = rse_gene$PC1_DNAm)),
+                     inner_join(my_music_est_v3[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[None]")],
+                                data.table(samples = rse_gene$SampleID, "DNAm-based pc1" = rse_gene$PC1_DNAm))) %>% data.table
+  
+  
+  
+  
+  
+  out_pd_v4_pc1 <- rbind(inner_join(music_est_v2[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[Default]")],
+                                data.table(samples = rse_gene$SampleID, "DNAm-based pc1" = rse_gene$PC1_DNAm)),
+                     inner_join(my_music_est_nrna_nac[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[osmFISH totalRNA]")],
+                                data.table(samples = rse_gene$SampleID, "DNAm-based pc1" = rse_gene$PC1_DNAm)),
+                     inner_join(my_music_est_size_nac[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[osmFISH cellsize]")],
+                                data.table(samples = rse_gene$SampleID, "DNAm-based pc1" = rse_gene$PC1_DNAm)),
+                     inner_join(my_music_est_nw_darmanis[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[Darmanis cell size]")],
+                                data.table(samples = rse_gene$SampleID, "DNAm-based pc1" = rse_gene$PC1_DNAm)),
+                     inner_join(my_music_est_nw_V2_50[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[Default:Nac top 50 genes]")],
+                                data.table(samples = rse_gene$SampleID, "DNAm-based pc1" = rse_gene$PC1_DNAm)),
+                     inner_join(my_music_est_nw_V2_25[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[Default:Nac top 25 genes]")],
+                                data.table(samples = rse_gene$SampleID, "DNAm-based pc1" = rse_gene$PC1_DNAm)),
+                     inner_join(my_music_est_nac_none[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[None]")],
+                                data.table(samples = rse_gene$SampleID, "DNAm-based pc1" = rse_gene$PC1_DNAm))) %>% data.table
+  
+  out_pd_v3 <- rbind(inner_join(music_est[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[Default]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_mole[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[osmFISH totalRNA]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_size[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[osmFISH cellsize]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_nw[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[Default:Nac all genes]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_nw_50[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[Default:Nac top 50 genes]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_nw_25[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[Default:Nac top 25 genes]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_v3[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[None]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm))) %>% data.table
+  
+  
+  out_pd_v4 <- rbind(inner_join(music_est_v2[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[Default]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_nrna_nac[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[osmFISH totalRNA]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_size_nac[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[osmFISH cellsize]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_nw_darmanis[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[Darmanis cell size]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_nw_V2_50[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[Default:Nac top 50 genes]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_nw_V2_25[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[Default:Nac top 25 genes]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm)),
+                     inner_join(my_music_est_nac_none[, .(samples, est = `TRUE`, type = "Ref:[NAc];Size:[None]")],
+                                data.table(samples = rse_gene$SampleID, "Houseman DNAm-based" = rse_gene$NeuN_pos_DNAm))) %>% data.table
+  
+  mytable_dar <- out_pd_v3_pc1[, .(R_sqrd = cor(est, `DNAm-based pc1`)^2), by = type]
+  
+  mytable_dar[, `:=`(R_sqrd = round(R_sqrd, 4))]
+  
+  mytable_dar_prop <- out_pd_v3[, .(R_sqrd_prop = cor(est, `Houseman DNAm-based`)^2), by = type]
+  mytable_dar_prop[, `:=`(R_sqrd_prop = round(R_sqrd_prop, 4))]
+  
+  inner_join(mytable_dar, mytable_dar_prop) %>% data.table
+  
+  mytable_nac <- out_pd_v4_pc1[, .(R_sqrd = cor(est, `DNAm-based pc1`)^2), by = type]
+  
+  mytable_nac[, `:=`(R_sqrd = round(R_sqrd, 4))]
+  
+  mytable_nac_prop <- out_pd_v4[, .(R_sqrd_prop = cor(est, `Houseman DNAm-based`)^2), by = type]
+  mytable_nac_prop[, `:=`(R_sqrd_prop = round(R_sqrd_prop, 4))]
+  
+  inner_join(mytable_nac, mytable_nac_prop) %>% data.table
+  
+}
+
 
 # Plot
 {
@@ -1029,7 +1155,7 @@ if(type_anal == "Neurons"){
     labs(x = "CIBERSORT", size = rel(1.5)) +
     scale_color_manual(values = p_save_cols, name = "" ) +
     scale_shape_manual(values = p_save_shape, name = "" ) +
-    scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0,.5)) +
+    scale_x_continuous(breaks = seq(0,1, by = .25), limits = c(0,.8)) +
     annotation_custom(gridExtra::tableGrob(mytable_ciber, rows = NULL, theme = mytheme), xmin=0.4, xmax=.4, ymin=.05, ymax=.05) +
     transparent_legend + remove_grid +
     ggtitle("Houseman Methylation vs CIBERSORT\n cell-type proportion estimates\n(Neurons only)") +
@@ -1494,6 +1620,26 @@ darmanis_gene_ave <- apply(data.matrix(darmanis_gene_cells[, -266]), 1 ,function
   
   out <- data.table(gene = NA, exp_neu_n = mean(x[n_f_idx]),
                     exp_neu_p  = mean(x[n_t_idx]))
+  
+  pb_i <<- pb_i+1
+  setTxtProgressBar(pb, pb_i, title = paste(round(pb_i/nrow(darmanis_gene_cells))*100,"% done"))
+  
+  return(out)
+})
+
+darmanis_gene_ave <- do.call(rbind, darmanis_gene_ave)
+
+darmanis_gene_ave$gene <- darmanis_gene_cells$genes
+
+pb <- txtProgressBar(min = 0, max = nrow(darmanis_gene_cells) , width = NA, style = 3)
+pb_i <- 0
+
+n_t_idx <- which(cell_type_data$Neurons == T)
+n_f_idx <- which(cell_type_data$Neurons == F)
+darmanis_gene_ave <- apply(data.matrix(darmanis_gene_cells[, -266]), 1 ,function(x){
+  
+  out <- data.table(gene = NA, exp_neu_n = sum(x[n_f_idx]),
+                    exp_neu_p  = sum(x[n_t_idx]))
   
   pb_i <<- pb_i+1
   setTxtProgressBar(pb, pb_i, title = paste(round(pb_i/nrow(darmanis_gene_cells))*100,"% done"))
