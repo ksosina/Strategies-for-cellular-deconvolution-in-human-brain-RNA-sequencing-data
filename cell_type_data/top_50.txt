@@ -1,0 +1,11 @@
+Approach,R_sqrd,RMSE
+Ref:[NAc];Size:[osmFISH cellsize],0.7583,0.065
+Ref:[NAc];Size:[osmFISH totalRNA],0.7558,0.1039
+Ref:[NAc];Size:[None],0.7544,0.1243
+Ref:[NAc];Size:[Default:Nac all genes],0.7558,0.143
+Ref:[NAc];Size:[Default],0.7552,0.1593
+Ref:[Darmanis];Size:[Default:Nac all genes],0.5596,0.1077
+Ref:[Darmanis];Size:[osmFISH cellsize],0.5369,0.1545
+Ref:[Darmanis];Size:[Default],0.5302,0.2
+Ref:[Darmanis];Size:[osmFISH totalRNA],0.5309,0.2014
+Ref:[Darmanis];Size:[None],0.5272,0.2243

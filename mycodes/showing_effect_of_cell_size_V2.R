@@ -666,6 +666,12 @@ if(type_anal == "Neurons"){
 
 
 # Save results
+
+# 1. All as .RData
+save(list = ls(), file = file.path(".", "all_results", "all_analysis.RData"))
+
+# 2 Tables for paper
+
 {
   
   out_pd_v3 <- rbind(inner_join(music_est[, .(samples, est = `TRUE`, type = "Ref:[Darmanis];Size:[Default]")],
@@ -1082,7 +1088,7 @@ if(type_anal == "Neurons"){
     colhead = list(fg_params=list(cex = 2.0)),
     rowhead = list(fg_params=list(cex =2.0)))
   
-  
+  with(plt_dt, wilcox.test(x = `Houseman RNA-based`, y = `Houseman DNAm-based`, paired = T))
   
   p_save <- ggplot(data = plt_dt, aes(x = `Houseman RNA-based`,y = `Houseman DNAm-based`)) + 
     geom_point(size = 10, col = "skyblue") + 
@@ -1105,6 +1111,9 @@ if(type_anal == "Neurons"){
   # •	B: Music RNA Default with Darmanis
   set <- c("Ref:[Darmanis];Size:[Default]")
   set_idx <- which(mytable$Approach %in% set)
+  
+  with( out_pd[type %in%set, ], wilcox.test(x = est, y = `Houseman DNAm-based`, paired = T))
+  
   p_save <- ggplot(data = out_pd[type %in%set, ], aes(x = est, y = `Houseman DNAm-based`, color = type, shape = type)) + 
     geom_point(size = 10) + 
     geom_abline(slope = 1, intercept = 0) +
@@ -1133,6 +1142,9 @@ if(type_anal == "Neurons"){
   
   ciber_darmanis[, type:="Ref:[Darmanis]"]
   out_ciber <- inner_join(ciber_darmanis[, .(samples = `Input Sample`, Neurons_pos, type)], DNam_darmanis) %>% data.table
+  
+  # with(out_ciber, t.test(x = Neurons_pos, y = `Houseman DNAm-based`, paired = T))
+  with(out_ciber, wilcox.test(x = Neurons_pos, y = `Houseman DNAm-based`, paired = T))
   
   mytable_ciber <- out_ciber[, .(R_sqrd = cor(Neurons_pos, `Houseman DNAm-based`)^2,
                                  RMSE = sqrt(mean((Neurons_pos -`Houseman DNAm-based`)^2)))]
@@ -2358,6 +2370,55 @@ stopCluster(cl)
 
 all_ttests <- inner_join(dar_ttests, nac_ttests) %>%  data.table
 
+
+# log Fold change
+dar_lgFC <- lapply(1:nrow(darmanis_gene_cells), function(i){
+  x <- darmanis_gene_cells[i, -266]
+  nm <- names(x)
+  
+  test_dt <-  cell_type_data[match(cells,nm ), .(cells, Neurons )]
+  test_dt$rna <- as.numeric(x)
+  # test_dt <- inner_join(data.table(cells = nm, "rna" = as.numeric(t(x))),
+  #                       cell_type_data[, .(cells, Neurons )], by = "cells") %>% data.table
+  
+  test_dt <- test_dt[, log2(mean(rna)), by = Neurons]
+  res <- test_dt[Neurons == TRUE, V1] - test_dt[Neurons == FALSE, V1]
+  
+  data.table(gene = darmanis_gene_cells[i, genes], dar_lg_FC = res)
+})
+dar_lgFC <- do.call(rbind, dar_lgFC)
+
+
+
+# For all Genes
+ncpus <- 4
+cl <- makeCluster(ncpus, outfile="")
+registerDoParallel(cl)
+clusterExport(cl, c("nac_gene_cells", "cell_mat"))
+# clusterExport(cl, ls(), envir = .GlobalEnv)
+
+nac_lgFC <- parLapply(cl, 1:nrow(nac_gene_cells), function(i){
+  require(data.table)
+  require(dplyr)
+  x <- nac_gene_cells[i, -4170]
+  nm <- names(x)
+  
+  test_dt <-  cell_mat[match(Cells, nm ), .(Cells, Neurons )]
+  test_dt$rna <- as.numeric(x)
+  
+  # test_dt <- inner_join(data.table(Cells = nm, "rna" = as.numeric(t(x))),
+  #                       cell_mat[, .(Cells, Neurons )], by = "Cells") %>% data.table
+  
+  test_dt <- test_dt[, log2(mean(rna)), by = Neurons]
+  res <- test_dt[Neurons == TRUE, V1] - test_dt[Neurons == FALSE, V1]
+  
+  data.table(gene = nac_gene_cells[i, Gene], nac_lg_fc = res)
+})
+beepr::beep()
+nac_lgFC <- do.call(rbind, nac_lgFC)
+
+stopCluster(cl)
+
 # fwrite(all_ttests, file.path("all_ttests.txt"))
 # fread("all_ttests.txt") -> all_ttests
 
@@ -2370,47 +2431,68 @@ transparent_legend =  theme(
 remove_grid <- theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
                      panel.background = element_blank(), axis.line = element_line(colour = "black"))
 
-with(all_ttests[is.finite(nac_t_stat) & is.finite(dar_t_stat)], round((cor(nac_t_stat, dar_t_stat)), 4))
+# with(all_ttests[is.finite(nac_t_stat) & is.finite(dar_t_stat)], round((cor(nac_t_stat, dar_t_stat)), 4))
 
-p_save_ttests <- ggplot(data = all_ttests, aes(x = nac_t_stat, y = dar_t_stat)) + 
+all_lgFC <- inner_join(nac_lgFC, dar_lgFC) %>%  data.table
+all_lgFC <- all_lgFC[is.finite(dar_lg_FC) & is.finite(nac_lg_fc)]
+
+p_save_ttests <- ggplot(data = all_lgFC, aes(x = nac_lg_fc, y = dar_lg_FC)) + 
   geom_point(size = 4) + 
   # geom_abline(slope = 1, intercept = 0, size = 3) +
-  geom_smooth(method = "auto", size = 3) +
-  xlab("NAc T-statistics") +
-  ylab("Darmanis T-statistics") +
-  scale_x_continuous(breaks = seq(-60,60, by = 10), limits = c(-55,55)) +
-  scale_y_continuous(breaks = seq(-60,60, by = 10), limits = c(-55,55)) +
+  # geom_smooth(method = "auto", size = 3) +
+  xlab(expression("NAc"~log[2]~("Fold Change"))) +
+  ylab(expression("Darmanis"~log[2]~("Fold Change"))) +
+  # scale_x_continuous(breaks = seq(-60,60, by = 10), limits = c(-55,55)) +
+  # scale_y_continuous(breaks = seq(-60,60, by = 10), limits = c(-55,55)) +
   transparent_legend + remove_grid +
   theme(plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
         text = element_text(size = 12),
         axis.title = element_text(face="bold", size = 14),
-        axis.text.y=element_text(size = 12, face="bold"),
-        axis.text.x=element_text(size = 12, face="bold"),
+        axis.text.y=element_text(size = 14, face="bold"),
+        axis.text.x=element_text(size = 14, face="bold"),
         legend.position = c(0.85, 0.10),
         legend.title = element_text(face="bold"))
-ggsave(file.path(".", "model", "manuscript", "nac_v_dar_ttests.pdf"), plot = p_save_ttests, dpi = "retina", width = 20, height = 20, units = "cm")
+ggsave(file.path(".", "model", "manuscript", "nac_v_dar_lFC.pdf"), plot = p_save_ttests, dpi = "retina", width = 25, height = 20, units = "cm")
 
-
-with(all_ttests[is.finite(nac_t_stat) & is.finite(dar_t_stat)], qqplot(nac_t_stat, dar_t_stat))
-abline(a = 0, b = 1)
-
-plt_dt <- rbind(all_ttests[, .(gene, t_stat = dar_t_stat, data = "Darmanis")],
-                all_ttests[, .(gene, t_stat = nac_t_stat, data = "NAc")])
-
-p_save_ttests <- ggplot(data = plt_dt, aes(x = data, y = abs(t_stat))) + 
-  geom_violin(fill = "skyblue") +
-  geom_boxplot(width = .05) +
-  xlab("Reference dataset") +
-  ylab(expression(abs("T-statistics"))) +
-  transparent_legend + remove_grid +
-  theme(plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
-        text = element_text(size = 12),
-        axis.title = element_text(face="bold", size = 14),
-        axis.text.y=element_text(size = 12, face="bold"),
-        axis.text.x=element_text(size = 12, face="bold"),
-        legend.position = c(0.85, 0.10),
-        legend.title = element_text(face="bold"))
-ggsave(file.path(".", "model", "manuscript", "nac_v_dar_ttests_bxplt.pdf"), plot = p_save_ttests, dpi = "retina", width = 20, height = 20, units = "cm")
+# p_save_ttests <- ggplot(data = all_ttests, aes(x = nac_t_stat, y = dar_t_stat)) + 
+#   geom_point(size = 4) + 
+#   # geom_abline(slope = 1, intercept = 0, size = 3) +
+#   geom_smooth(method = "auto", size = 3) +
+#   xlab("NAc T-statistics") +
+#   ylab("Darmanis T-statistics") +
+#   scale_x_continuous(breaks = seq(-60,60, by = 10), limits = c(-55,55)) +
+#   scale_y_continuous(breaks = seq(-60,60, by = 10), limits = c(-55,55)) +
+#   transparent_legend + remove_grid +
+#   theme(plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+#         text = element_text(size = 12),
+#         axis.title = element_text(face="bold", size = 14),
+#         axis.text.y=element_text(size = 12, face="bold"),
+#         axis.text.x=element_text(size = 12, face="bold"),
+#         legend.position = c(0.85, 0.10),
+#         legend.title = element_text(face="bold"))
+# ggsave(file.path(".", "model", "manuscript", "nac_v_dar_ttests.pdf"), plot = p_save_ttests, dpi = "retina", width = 20, height = 20, units = "cm")
+# 
+# 
+# with(all_ttests[is.finite(nac_t_stat) & is.finite(dar_t_stat)], qqplot(nac_t_stat, dar_t_stat))
+# abline(a = 0, b = 1)
+# 
+# plt_dt <- rbind(all_ttests[, .(gene, t_stat = dar_t_stat, data = "Darmanis")],
+#                 all_ttests[, .(gene, t_stat = nac_t_stat, data = "NAc")])
+# 
+# p_save_ttests <- ggplot(data = plt_dt, aes(x = data, y = abs(t_stat))) + 
+#   geom_violin(fill = "skyblue") +
+#   geom_boxplot(width = .05) +
+#   xlab("Reference dataset") +
+#   ylab(expression(abs("T-statistics"))) +
+#   transparent_legend + remove_grid +
+#   theme(plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+#         text = element_text(size = 12),
+#         axis.title = element_text(face="bold", size = 14),
+#         axis.text.y=element_text(size = 12, face="bold"),
+#         axis.text.x=element_text(size = 12, face="bold"),
+#         legend.position = c(0.85, 0.10),
+#         legend.title = element_text(face="bold"))
+# ggsave(file.path(".", "model", "manuscript", "nac_v_dar_ttests_bxplt.pdf"), plot = p_save_ttests, dpi = "retina", width = 20, height = 20, units = "cm")
 
 
 

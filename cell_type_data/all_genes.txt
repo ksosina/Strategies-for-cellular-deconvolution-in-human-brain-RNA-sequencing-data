@@ -1,0 +1,15 @@
+Approach,R_sqrd,RMSE
+Ref:[NAc];Size:[osmFISH cellsize],0.5706,0.046
+Ref:[NAc];Size:[osmFISH totalRNA],0.543,0.0611
+Ref:[NAc];Size:[None],0.5363,0.0755
+Ref:[NAc];Size:[Default],0.7094,0.1719
+Ref:[NAc];Size:[Default:Nac all genes],0.7094,0.1719
+Ref:[NAc];Size:[Default:Nac top 25 genes],0.7137,0.1819
+Ref:[NAc];Size:[Default:Nac top 50 genes],0.72,0.1835
+Ref:[Darmanis];Size:[Default:Nac top 50 genes],0.5917,0.0528
+Ref:[Darmanis];Size:[Default:Nac top 25 genes],0.5913,0.0556
+Ref:[Darmanis];Size:[Default:Nac all genes],0.5889,0.0796
+Ref:[Darmanis];Size:[Default],0.5548,0.3653
+Ref:[Darmanis];Size:[osmFISH cellsize],0.5514,0.3847
+Ref:[Darmanis];Size:[osmFISH totalRNA],0.5425,0.4314
+Ref:[Darmanis];Size:[None],0.538,0.4525

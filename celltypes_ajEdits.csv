@@ -1,0 +1,33 @@
+ClusterName,Celltype,Class,Subclass
+Inhibitory CP,Inhibitory,Neuron,Inhibitory
+Inhibitory Crhbp,Inhibitory,Neuron,Inhibitory
+Inhibitory Cnr1,Inhibitory,Neuron,Inhibitory
+Inhibitory IC,Inhibitory,Neuron,Inhibitory
+Inhibitory Kcnip2,Inhibitory,Neuron,Inhibitory
+Inhibitory Pthlh,Inhibitory,Neuron,Inhibitory
+Inhibitory Vip,Inhibitory,Neuron,Inhibitory
+Pyramidal Cpne5,Pyramidal,Neuron,Excitatory
+Pyramidal L2-3,Pyramidal,Neuron,Excitatory
+Pyramidal L2-3 L5,Pyramidal,Neuron,Excitatory
+Pyramidal Kcnip2,Pyramidal,Neuron,Excitatory
+Pyramidal L3-4,Pyramidal,Neuron,Excitatory
+pyramidal L4,pyramidal,Neuron,Excitatory
+Pyramidal L5,Pyramidal,Neuron,Excitatory
+Pyramidal L6,Pyramidal,Neuron,Excitatory
+Hippocampus,Hippocampus,NA,NA
+Astrocyte Gfap,Astrocyte,Astrocyte,Astrocyte
+Astrocyte Mfge8,Astrocyte,Astrocyte,Astrocyte
+Oligodendrocyte Precursor cells,Oligodendrocyte,OPC,OPC
+Oligodendrocyte COP,Oligodendrocyte,OPC,OPC
+Oligodendrocyte NF,Oligodendrocyte,OPC,OPC
+Oligodendrocyte MF,Oligodendrocyte,Oligodendrocyte,Oligodendrocyte
+Oligodendrocyte Mature,Oligodendrocyte,Oligodendrocyte,Oligodendrocyte
+Perivascular Macrophages,Perivascular,NA,NA
+Microglia,Microglia,Microglia,Microglia
+C. Plexus,C.,NA,NA
+Ependymal,Ependymal,NA,NA
+Pericytes,Pericytes,NA,NA
+Endothelial,Endothelial,Endothelial,Endothelial
+Endothelial 1,Endothelial,Endothelial,Endothelial
+Vascular Smooth Muscle,Vascular,NA,NA
+Excluded,Excluded,NA,NA
