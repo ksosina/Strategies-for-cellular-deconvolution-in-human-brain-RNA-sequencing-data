@@ -14,7 +14,7 @@ bulk_rna <- fread(file.path(".", "toy_bulk.txt"))
 ref_data <-  fread(file.path(".", "nac_ref.txt"))
 # Cell sizes per cell type (Neuron vs glial)
 cell_size <-  fread(file.path(".", "nac_size.txt"))
-# Cell cell type  per cell in ref_data (Neuron vs glial)
+# Cell type  per cell in ref_data (Neuron vs glial)
 cell_type_data <-  fread(file.path(".", "nac_cell_class.txt"))
 
 
