@@ -11,8 +11,8 @@ scrna <- "single" # both
 
 # Get common set of Genes -------------------------------------------------------------------
 
-rna_gene_x_cells <- fread(file.path(".", "cell_data", "rna_gene_x_cells.txt"))
-cell_type_data <- fread(file.path(".", "cell_data", "cell_type_info.txt"))
+rna_gene_x_cells <- fread(file.path(".", "cell_data", "rna_gene_x_cells.txt.gz"))
+cell_type_data <- fread(file.path(".", "cell_data", "cell_type_info.txt.gz"))
 cell_type_data <- cell_type_data[ all %in% c("Neurons", "OPC",  "Astrocytes",
                                              "Oligodendrocytes", "Microglia"), ]
 
